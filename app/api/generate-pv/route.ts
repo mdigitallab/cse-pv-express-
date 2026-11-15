@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
 			const uploaded = await ai.files.upload({
 				file: blob,
 				mimeType: file.type || 'audio/mp4',
-			});
+			}as any);
 			uploadedFilesMeta.push(uploaded);
 		}
 
