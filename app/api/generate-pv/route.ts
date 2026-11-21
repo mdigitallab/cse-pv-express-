@@ -17,32 +17,38 @@ interface FileUrlItem {
 
 async function generateWithRetry(
 	contents: any[],
-	model = 'gemini-3.8-flash',
-	maxRetries = 3
+	models = ['gemini-3.8-flash', 'gemini-2.5-flash'],
+	maxRetriesPerModel = 2
 ) {
-	for (let attempt = 1; attempt <= maxRetries; attempt++) {
-		try {
-			return await ai.models.generateContent({
-				model,
-				contents,
-			});
-		} catch (err: any) {
-			const msg = String(err?.message || '');
-			const isTemporaryOverload =
-				err?.status === 503 ||
-				err?.code === 503 ||
-				msg.includes('503') ||
-				msg.includes('UNAVAILABLE') ||
-				msg.includes('high demand');
+	let lastError: any;
 
-			if (!isTemporaryOverload || attempt === maxRetries) {
-				throw err;
+	for (const model of models) {
+		for (let attempt = 1; attempt <= maxRetriesPerModel; attempt++) {
+			try {
+				return await ai.models.generateContent({
+					model,
+					contents,
+				});
+			} catch (err: any) {
+				lastError = err;
+				const msg = String(err?.message || '');
+				const isTemporaryOverload =
+					err?.status === 503 ||
+					err?.code === 503 ||
+					msg.includes('503') ||
+					msg.includes('UNAVAILABLE') ||
+					msg.includes('high demand');
+
+				if (!isTemporaryOverload) {
+					throw err;
+				}
+
+				await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
 			}
-
-			await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
 		}
 	}
-	throw new Error('Échec de la génération après plusieurs tentatives.');
+
+	throw lastError || new Error('Échec de la génération après plusieurs tentatives.');
 }
 
 export async function POST(req: NextRequest) {
@@ -100,11 +106,15 @@ Rédige un Procès-Verbal unifié, complet, fidèle, neutre et juridiquement rig
 
 Adopte un style professionnel, clair, structuré avec des titres et des listes à puces.`;
 
-		// Envoi de tous les fichiers audios + le prompt à l'IA avec relance automatique en cas de 503
-		const response = await generateWithRetry([...fileParts, prompt], 'gemini-3.8-flash', 3);
+		// 4. Génération du PV avec relance automatique et modèle de repli en cas de 503
+		const response = await generateWithRetry(
+			[...fileParts, prompt],
+			['gemini-3.8-flash', 'gemini-2.5-flash'],
+			2
+		);
 		const pvText = response.text || '';
 
-		// 4. Sauvegarde sécurisée du PV unifié dans Supabase
+		// 5. Sauvegarde sécurisée du PV unifié dans Supabase
 		const { data: meetingRecord, error: dbError } = await supabase
 			.from('meetings')
 			.insert({
@@ -132,7 +142,7 @@ Adopte un style professionnel, clair, structuré avec des titres et des listes �
 			{ status: 500 }
 		);
 	} finally {
-		// 5. Nettoyage systématique des fichiers sur Gemini (RGPD), même en cas d'erreur
+		// 6. Suppression systématique des fichiers sur Gemini (RGPD), même en cas d'erreur
 		for (const f of uploadedFilesMeta) {
 			if (f?.name) {
 				try {
