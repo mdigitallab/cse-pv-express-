@@ -238,6 +238,22 @@ export default function Home() {
 							>
 								<span>📥</span> Télécharger en Word (.docx)
 							</button>
+							<button
+  type="button"
+  onClick={() => {
+    const ok = window.confirm(
+      "Voulez-vous vraiment effacer ce procès-verbal ? Cette action est irréversible."
+    );
+    if (ok) {
+      setPvResult("");
+      setFiles([]);
+      setError("");
+    }
+  }}
+  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600/80 hover:bg-red-600 text-white transition cursor-pointer"
+>
+  Effacer le PV
+</button>
 						</div>
 						<textarea
 							value={pvResult}
