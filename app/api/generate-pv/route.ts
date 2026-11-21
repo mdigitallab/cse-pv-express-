@@ -15,7 +15,39 @@ interface FileUrlItem {
 	name?: string;
 }
 
+async function generateWithRetry(
+	contents: any[],
+	model = 'gemini-3.8-flash',
+	maxRetries = 3
+) {
+	for (let attempt = 1; attempt <= maxRetries; attempt++) {
+		try {
+			return await ai.models.generateContent({
+				model,
+				contents,
+			});
+		} catch (err: any) {
+			const msg = String(err?.message || '');
+			const isTemporaryOverload =
+				err?.status === 503 ||
+				err?.code === 503 ||
+				msg.includes('503') ||
+				msg.includes('UNAVAILABLE') ||
+				msg.includes('high demand');
+
+			if (!isTemporaryOverload || attempt === maxRetries) {
+				throw err;
+			}
+
+			await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+		}
+	}
+	throw new Error('Échec de la génération après plusieurs tentatives.');
+}
+
 export async function POST(req: NextRequest) {
+	const uploadedFilesMeta: any[] = [];
+
 	try {
 		const body = await req.json();
 		const fileUrls = (body.fileUrls || []) as FileUrlItem[];
@@ -25,8 +57,6 @@ export async function POST(req: NextRequest) {
 		if (!Array.isArray(fileUrls) || fileUrls.length === 0) {
 			return NextResponse.json({ error: 'Aucun fichier audio fourni.' }, { status: 400 });
 		}
-
-		const uploadedFilesMeta = [];
 
 		// 1. Téléchargement de chaque audio depuis Supabase Storage + upload vers l'API File de Gemini
 		for (const item of fileUrls) {
@@ -70,20 +100,11 @@ Rédige un Procès-Verbal unifié, complet, fidèle, neutre et juridiquement rig
 
 Adopte un style professionnel, clair, structuré avec des titres et des listes à puces.`;
 
-		// Envoi de tous les fichiers audios + le prompt à l'IA
-		const response = await ai.models.generateContent({
-			model: 'gemini-3.8-flash',
-			contents: [...fileParts, prompt],
-		});
-
+		// Envoi de tous les fichiers audios + le prompt à l'IA avec relance automatique en cas de 503
+		const response = await generateWithRetry([...fileParts, prompt], 'gemini-3.8-flash', 3);
 		const pvText = response.text || '';
 
-		// 4. Nettoyage : suppression de tous les fichiers audio sur les serveurs Gemini (RGPD)
-		for (const f of uploadedFilesMeta) {
-			await ai.files.delete({ name: f.name! });
-		}
-
-		// 5. Sauvegarde sécurisée du PV unifié dans Supabase
+		// 4. Sauvegarde sécurisée du PV unifié dans Supabase
 		const { data: meetingRecord, error: dbError } = await supabase
 			.from('meetings')
 			.insert({
@@ -110,5 +131,16 @@ Adopte un style professionnel, clair, structuré avec des titres et des listes �
 			{ error: error.message || 'Erreur interne lors de la génération du PV.' },
 			{ status: 500 }
 		);
+	} finally {
+		// 5. Nettoyage systématique des fichiers sur Gemini (RGPD), même en cas d'erreur
+		for (const f of uploadedFilesMeta) {
+			if (f?.name) {
+				try {
+					await ai.files.delete({ name: f.name });
+				} catch (cleanupErr) {
+					console.error('Erreur suppression fichier Gemini :', cleanupErr);
+				}
+			}
+		}
 	}
 }
