@@ -11,6 +11,7 @@ export default function Home() {
 	const [loading, setLoading] = useState(false);
 	const [pvResult, setPvResult] = useState('');
 	const [error, setError] = useState('');
+	const [hasConsented, setHasConsented] = useState(false);
 
 	useEffect(() => {
 		setDate(new Date().toISOString().split('T')[0]);
@@ -21,6 +22,10 @@ export default function Home() {
 		if (files.length === 0) {
 			setError('Veuillez sélectionner au moins un fichier audio.');
 			return;
+			if (!hasConsented) {
+  setError('Veuillez cocher la case attestant de l’information des participants avant de générer le PV.');
+  return;
+}
 		}
 
 		setLoading(true);
@@ -195,10 +200,24 @@ export default function Home() {
 									<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
 								</svg>
 								Analyse combinée des fichiers et rédaction en cours...
+								
 							</>
 						) : (
 							<>⚡ Générer le Procès-Verbal unifié</>
 						)}
+						<div className="flex items-start gap-2 my-4 p-3 bg-slate-800/80 border border-slate-700 rounded-lg text-left">
+  <input
+    id="rgpd-consent"
+    type="checkbox"
+    checked={hasConsented}
+    onChange={(e) => setHasConsented(e.target.checked)}
+    className="mt-1 h-4 w-4 rounded border-slate-500 text-blue-500 focus:ring-blue-500 cursor-pointer"
+    required
+  />
+  <label htmlFor="rgpd-consent" className="text-xs text-slate-300 cursor-pointer leading-relaxed">
+    En important cet enregistrement, je certifie agir au nom du CSE et avoir préalablement informé l’ensemble des participants de la réunion de l’enregistrement audio et de son traitement automatisé.
+  </label>
+</div>
 					</button>
 				</form>
 
