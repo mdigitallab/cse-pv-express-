@@ -1,4 +1,4 @@
- 'use client';
+'use client';
 
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
@@ -135,7 +135,7 @@ export default function Home() {
 
 		const doc = new Document({ sections: [{ children }] });
 		const blob = await Packer.toBlob(doc);
-		saveAs(blob, `PV_CSE_${date}.docx`);
+		saveAs(blob, `M_Labvox_PV_CSE_${date}.docx`);
 	};
 
 	return (
@@ -147,7 +147,7 @@ export default function Home() {
 							<span className="bg-blue-600 text-white font-bold p-2.5 rounded-xl text-lg shadow-lg shadow-blue-500/30">⚖️</span>
 							<div>
 								<h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-2">
-									CSE-PV Express <span className="text-xs font-semibold px-2.5 py-1 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full">M DIGITAL LAB</span>
+									M Labvox <span className="text-xs font-semibold px-2.5 py-1 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full">MDIGITALLAB</span>
 								</h1>
 								<p className="text-slate-400 text-sm mt-0.5">Plateforme sécurisée de retranscription et rédaction automatisée de PV de CSE</p>
 							</div>
