@@ -12,6 +12,12 @@ interface AudioItem {
 	mimeType?: string;
 }
 
+interface AttendeeItem {
+	name: string;
+	role?: string;
+	group?: 'bureau_elus' | 'intervenants';
+}
+
 function guessMimeType(fileName?: string, url?: string, providedType?: string): string {
 	if (providedType?.startsWith('audio/')) return providedType;
 	const target = (fileName || url || '').toLowerCase();
@@ -52,11 +58,31 @@ function normalizeAudios(body: any): AudioItem[] {
 		.filter((item): item is AudioItem => item !== null);
 }
 
+function normalizeAttendees(body: any): AttendeeItem[] {
+	if (!Array.isArray(body?.attendees)) return [];
+	return body.attendees
+		.map((item: any): AttendeeItem | null => {
+			if (!item || typeof item !== 'object') return null;
+			const name = typeof item.name === 'string' ? item.name.trim() : '';
+			if (!name) return null;
+			const role = typeof item.role === 'string' ? item.role.trim() : '';
+			const group =
+				item.group === 'bureau_elus' || item.group === 'intervenants'
+					? item.group
+					: undefined;
+			return { name, role: role || undefined, group };
+		})
+		.filter((a: AttendeeItem | null): a is AttendeeItem => a !== null);
+}
+
 export async function POST(req: NextRequest) {
 	const uploadedGeminiFiles: string[] = [];
 	try {
 		if (!process.env.GEMINI_API_KEY) {
-			return NextResponse.json({ error: 'Clé GEMINI_API_KEY manquante sur le serveur.' }, { status: 500 });
+			return NextResponse.json(
+				{ error: 'Clé GEMINI_API_KEY manquante sur le serveur.' },
+				{ status: 500 }
+			);
 		}
 
 		const body = await req.json();
@@ -72,16 +98,20 @@ export async function POST(req: NextRequest) {
 				: typeof body?.date === 'string'
 					? body.date
 					: '';
+
 		const audios = normalizeAudios(body);
 		if (!audios.length) {
-			return NextResponse.json({ error: 'Aucun fichier audio fourni.' }, { status: 400 });
+			return NextResponse.json(
+				{ error: 'Aucun fichier audio fourni.' },
+				{ status: 400 }
+			);
 		}
 
+		const attendees = normalizeAttendees(body);
 		const modelToUse =
 			typeof body?.model === 'string' && body.model.trim()
 				? body.model.replace(/^models\//, '').trim()
 				: SINGLE_MODEL;
-
 		const contentsParts: any[] = [];
 
 		for (let i = 0; i < audios.length; i++) {
@@ -106,27 +136,51 @@ export async function POST(req: NextRequest) {
 				file: new Blob([arrayBuffer], { type: mimeType }),
 				config: { mimeType, displayName: item.name || `audio-${i + 1}` },
 			});
+
 			if (uploadedFile?.name) uploadedGeminiFiles.push(uploadedFile.name);
 			contentsParts.push({
-				fileData: { fileUri: uploadedFile.uri, mimeType: uploadedFile.mimeType || mimeType },
+				fileData: {
+					fileUri: uploadedFile.uri,
+					mimeType: uploadedFile.mimeType || mimeType,
+				},
 			});
 		}
+
+		const attendeesSection =
+			attendees.length > 0
+				? `Personnes présentes / intervenants cochés pour cette séance (respecte strictement ces noms et fonctions) :
+${attendees.map((a: AttendeeItem) => `- ${a.name}${a.role ? ` — ${a.role}` : ''}`).join('\n')}`
+				: `Aucune liste de présents n'a été cochée : mentionne uniquement les noms et fonctions explicitement audibles dans l'audio sans en inventer.`;
 
 		contentsParts.push(
 			`Rédige un Procès-Verbal de réunion CSE clair, fidèle et structuré en français à partir de l'audio fourni.
 Séance : ${meetingTitle} | Date : ${meetingDate || 'Non précisée'}.
-Structure : En-tête et participants mentionnés, Points de l'ordre du jour, Décisions / Votes / Engagements, Clôture.
-N'invente aucun fait, signale les passages inaudibles par [passage inaudible] et garde un ton formel.`
+
+${attendeesSection}
+
+Structure attendue :
+1. En-tête et liste des participants / intervenants présents (avec leur fonction exacte lorsqu'elle est connue)
+2. Points abordés à l'ordre du jour
+3. Décisions, votes et engagements (en distinguant les engagements de la Direction et ceux des élus du CSE)
+4. Clôture de la séance
+
+Règles strictes :
+- N'invente aucun fait, chiffre, vote ou propos absent de l'audio.
+- Utilise l'orthographe exacte des personnes listées ci-dessus lorsqu'elles interviennent ou sont présentes.
+- Si l'identité d'un intervenant est incertaine malgré la liste, indique [identité à confirmer].
+- Signale les passages incompréhensibles par [passage inaudible] et garde un ton formel.`
 		);
 
 		const response = await ai.models.generateContent({
 			model: modelToUse,
 			contents: contentsParts,
 		});
-
 		const pvText = response?.text?.trim();
 		if (!pvText) {
-			return NextResponse.json({ error: 'Le modèle a renvoyé une réponse vide.' }, { status: 502 });
+			return NextResponse.json(
+				{ error: 'Le modèle a renvoyé une réponse vide.' },
+				{ status: 502 }
+			);
 		}
 
 		return NextResponse.json({ pv: pvText, modelUsed: modelToUse });
@@ -141,6 +195,7 @@ N'invente aucun fait, signale les passages inaudibles par [passage inaudible] et
 				: statusCode === 503
 					? 'Le modèle Gemini est temporairement surchargé (503 UNAVAILABLE). Réessaie dans un instant.'
 					: error?.message || 'Erreur interne lors de la génération du PV.';
+
 		return NextResponse.json(
 			{ error: message, code: statusCode },
 			{ status: statusCode >= 400 && statusCode < 600 ? statusCode : 500 }

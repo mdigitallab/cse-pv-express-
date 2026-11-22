@@ -1,9 +1,10 @@
-'use client';
+ 'use client';
 
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 import { saveAs } from 'file-saver';
+import ParticipantsSelector, { SelectedAttendee } from './ParticipantsSelector';
 
 const supabase = createClient(
 	process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,6 +15,7 @@ export default function Home() {
 	const [title, setTitle] = useState('Réunion Ordinaire du CSE');
 	const [date, setDate] = useState('');
 	const [files, setFiles] = useState<File[]>([]);
+	const [selectedAttendees, setSelectedAttendees] = useState<SelectedAttendee[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [pvResult, setPvResult] = useState('');
 	const [error, setError] = useState('');
@@ -64,7 +66,12 @@ export default function Home() {
 			const res = await fetch('/api/generate-pv', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ title, date, fileUrls }),
+				body: JSON.stringify({
+					title,
+					date,
+					fileUrls,
+					attendees: selectedAttendees,
+				}),
 			});
 
 			const rawText = await res.text();
@@ -174,6 +181,8 @@ export default function Home() {
 							{files.length > 0 && <p className="text-xs text-blue-400 mt-3 font-medium">{files.length} fichier(s) sélectionné(s) : {files.map((f) => f.name).join(', ')}</p>}
 						</div>
 					</div>
+
+					<ParticipantsSelector onSelectionChange={setSelectedAttendees} />
 
 					{error && <div className="p-4 bg-red-950/50 border border-red-800 text-red-300 rounded-xl text-sm">⚠️ {error}</div>}
 
