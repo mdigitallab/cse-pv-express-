@@ -25,7 +25,12 @@ function guessMimeType(fileName?: string, url?: string, providedType?: string): 
 }
 
 function normalizeAudios(body: any): AudioItem[] {
-	const rawItems = body?.audios ?? body?.audioUrls ?? body?.urls ?? body?.files ??
+	const rawItems =
+		body?.fileUrls ??
+		body?.audios ??
+		body?.audioUrls ??
+		body?.urls ??
+		body?.files ??
 		(body?.audioUrl ? [{ url: body.audioUrl }] : []);
 	if (!Array.isArray(rawItems)) return [];
 
@@ -61,32 +66,42 @@ export async function POST(req: NextRequest) {
 				: typeof body?.title === 'string' && body.title.trim()
 					? body.title.trim()
 					: 'Réunion du CSE';
-		const meetingDate = typeof body?.meetingDate === 'string'
-			? body.meetingDate
-			: typeof body?.date === 'string' ? body.date : '';
+		const meetingDate =
+			typeof body?.meetingDate === 'string'
+				? body.meetingDate
+				: typeof body?.date === 'string'
+					? body.date
+					: '';
 		const audios = normalizeAudios(body);
 		if (!audios.length) {
 			return NextResponse.json({ error: 'Aucun fichier audio fourni.' }, { status: 400 });
 		}
 
 		const requestedModel = body?.model;
-		const modelToUse = typeof requestedModel === 'string' && requestedModel.trim()
-			? requestedModel.replace(/^models\//, '').trim()
-			: PRIMARY_MODEL;
+		const modelToUse =
+			typeof requestedModel === 'string' && requestedModel.trim()
+				? requestedModel.replace(/^models\//, '').trim()
+				: PRIMARY_MODEL;
 		const contentsParts: any[] = [];
 
 		for (let i = 0; i < audios.length; i++) {
 			const item = audios[i];
 			const audioResponse = await fetch(item.url);
 			if (!audioResponse.ok) {
-				return NextResponse.json({
-					error: `Impossible de récupérer l'audio "${item.name || `fichier ${i + 1}`}" depuis le stockage (HTTP ${audioResponse.status}).`,
-				}, { status: 400 });
+				return NextResponse.json(
+					{
+						error: `Impossible de récupérer l'audio "${item.name || `fichier ${i + 1}`}" depuis le stockage (HTTP ${audioResponse.status}).`,
+					},
+					{ status: 400 }
+				);
 			}
 
 			const arrayBuffer = await audioResponse.arrayBuffer();
-			const mimeType = guessMimeType(item.name, item.url,
-				item.mimeType || audioResponse.headers.get('content-type') || undefined);
+			const mimeType = guessMimeType(
+				item.name,
+				item.url,
+				item.mimeType || audioResponse.headers.get('content-type') || undefined
+			);
 			const uploadedFile = await ai.files.upload({
 				file: new Blob([arrayBuffer], { type: mimeType }),
 				config: { mimeType, displayName: item.name || `audio-${i + 1}` },
@@ -116,13 +131,15 @@ Consignes :
 		return NextResponse.json({ pv: pvText, modelUsed: modelToUse });
 	} catch (error: any) {
 		const rawMessage = String(error?.message || '');
-		const statusCode = Number(error?.status || error?.code) ||
+		const statusCode =
+			Number(error?.status || error?.code) ||
 			(rawMessage.includes('429') ? 429 : rawMessage.includes('503') ? 503 : 500);
-		const message = statusCode === 429
-			? 'Quota journalier Gemini atteint (429 RESOURCE_EXHAUSTED). Réessaie après réinitialisation du quota ou avec un autre modèle disponible.'
-			: statusCode === 503
-				? 'Le modèle Gemini est temporairement surchargé (503 UNAVAILABLE). Réessaie dans un instant.'
-				: error?.message || 'Erreur interne lors de la génération du PV.';
+		const message =
+			statusCode === 429
+				? 'Quota journalier Gemini atteint (429 RESOURCE_EXHAUSTED). Réessaie après réinitialisation du quota ou avec un autre modèle disponible.'
+				: statusCode === 503
+					? 'Le modèle Gemini est temporairement surchargé (503 UNAVAILABLE). Réessaie dans un instant.'
+					: error?.message || 'Erreur interne lors de la génération du PV.';
 		return NextResponse.json({ error: message, code: statusCode }, {
 			status: statusCode >= 400 && statusCode < 600 ? statusCode : 500,
 		});
