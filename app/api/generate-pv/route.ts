@@ -4,7 +4,13 @@ import { GoogleGenAI } from '@google/genai';
 export const maxDuration = 60;
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-const PRIMARY_MODEL = 'gemini-3.7-flash';
+
+const MODEL_CANDIDATES = [
+	'gemini-3.7-flash',
+	'gemini-3.6-flash',
+	'gemini-2.5-flash',
+	'gemini-3.5-flash',
+];
 
 interface AudioItem {
 	url: string;
@@ -52,6 +58,15 @@ function normalizeAudios(body: any): AudioItem[] {
 		.filter((item): item is AudioItem => item !== null);
 }
 
+function extractStatusCode(error: any): number {
+	const direct = Number(error?.status || error?.code || error?.response?.status);
+	if (direct >= 400 && direct < 600) return direct;
+	const msg = String(error?.message || '');
+	if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) return 429;
+	if (msg.includes('503') || msg.includes('UNAVAILABLE')) return 503;
+	return 500;
+}
+
 export async function POST(req: NextRequest) {
 	const uploadedGeminiFiles: string[] = [];
 	try {
@@ -77,11 +92,15 @@ export async function POST(req: NextRequest) {
 			return NextResponse.json({ error: 'Aucun fichier audio fourni.' }, { status: 400 });
 		}
 
-		const requestedModel = body?.model;
-		const modelToUse =
-			typeof requestedModel === 'string' && requestedModel.trim()
-				? requestedModel.replace(/^models\//, '').trim()
-				: PRIMARY_MODEL;
+		const requestedModel =
+			typeof body?.model === 'string' && body.model.trim()
+				? body.model.replace(/^models\//, '').trim()
+				: null;
+
+		const modelsToTry = requestedModel
+			? [requestedModel, ...MODEL_CANDIDATES.filter((m) => m !== requestedModel)]
+			: MODEL_CANDIDATES;
+
 		const contentsParts: any[] = [];
 
 		for (let i = 0; i < audios.length; i++) {
@@ -125,24 +144,51 @@ Consignes :
 3. Si un passage est inaudible ou ambigu, indique-le brièvement entre crochets ([passage inaudible]).
 4. Utilise un ton neutre, formel et exploitable pour un PV officiel.`);
 
-		const response = await ai.models.generateContent({ model: modelToUse, contents: contentsParts });
-		const pvText = response?.text?.trim();
-		if (!pvText) return NextResponse.json({ error: 'Le modèle a renvoyé une réponse vide.' }, { status: 502 });
-		return NextResponse.json({ pv: pvText, modelUsed: modelToUse });
+		let pvText = '';
+		let modelUsed = modelsToTry[0];
+		let lastError: any = null;
+
+		for (const candidateModel of modelsToTry) {
+			try {
+				const response = await ai.models.generateContent({
+					model: candidateModel,
+					contents: contentsParts,
+				});
+				const candidateText = response?.text?.trim();
+				if (candidateText) {
+					pvText = candidateText;
+					modelUsed = candidateModel;
+					break;
+				}
+				lastError = new Error('Le modèle a renvoyé une réponse vide.');
+			} catch (err: any) {
+				lastError = err;
+				const code = extractStatusCode(err);
+				// Si surcharge (503) ou quota (429), on tente le modèle suivant de la liste
+				if (code === 503 || code === 429) {
+					continue;
+				}
+				throw err;
+			}
+		}
+
+		if (!pvText) {
+			throw lastError || new Error('Aucun modèle disponible pour générer le PV.');
+		}
+
+		return NextResponse.json({ pv: pvText, modelUsed });
 	} catch (error: any) {
-		const rawMessage = String(error?.message || '');
-		const statusCode =
-			Number(error?.status || error?.code) ||
-			(rawMessage.includes('429') ? 429 : rawMessage.includes('503') ? 503 : 500);
+		const statusCode = extractStatusCode(error);
 		const message =
 			statusCode === 429
-				? 'Quota journalier Gemini atteint (429 RESOURCE_EXHAUSTED). Réessaie après réinitialisation du quota ou avec un autre modèle disponible.'
+				? 'Quota journalier Gemini atteint (429 RESOURCE_EXHAUSTED) sur les modèles testés. Réessaie plus tard.'
 				: statusCode === 503
-					? 'Le modèle Gemini est temporairement surchargé (503 UNAVAILABLE). Réessaie dans un instant.'
+					? 'Les modèles Gemini testés sont temporairement surchargés (503 UNAVAILABLE). Réessaie dans un instant.'
 					: error?.message || 'Erreur interne lors de la génération du PV.';
-		return NextResponse.json({ error: message, code: statusCode }, {
-			status: statusCode >= 400 && statusCode < 600 ? statusCode : 500,
-		});
+		return NextResponse.json(
+			{ error: message, code: statusCode },
+			{ status: statusCode >= 400 && statusCode < 600 ? statusCode : 500 }
+		);
 	} finally {
 		for (const fileName of uploadedGeminiFiles) {
 			try {
