@@ -1,151 +1,173 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 
 export const maxDuration = 60;
 
-const supabase = createClient(
-	process.env.NEXT_PUBLIC_SUPABASE_URL!,
-	process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-interface FileUrlItem {
+// Modèle principal (tu peux le remplacer par 'gemini-2.5-flash' ou 'gemini-3.6-flash')
+const PRIMARY_MODEL = 'gemini-3.7-flash';
+
+interface AudioItem {
 	url: string;
-	mimeType?: string;
 	name?: string;
+	mimeType?: string;
 }
 
-async function generateWithRetry(
-	contents: any[],
-	model = 'gemini-3.8-flash',
-	maxRetries = 2
-) {
-	let lastError: any;
-
-	for (let attempt = 1; attempt <= maxRetries; attempt++) {
-		try {
-			return await ai.models.generateContent({
-				model,
-				contents,
-			});
-		} catch (err: any) {
-			lastError = err;
-			const msg = String(err?.message || '');
-			const isTemporaryOverload =
-				err?.status === 503 ||
-				err?.code === 503 ||
-				msg.includes('503') ||
-				msg.includes('UNAVAILABLE') ||
-				msg.includes('high demand');
-
-			if (!isTemporaryOverload || attempt === maxRetries) {
-				throw err;
-			}
-
-			await new Promise((resolve) => setTimeout(resolve, 1500));
-		}
+function guessMimeType(fileName?: string, url?: string, providedType?: string): string {
+	if (providedType && providedType.startsWith('audio/')) {
+		return providedType;
 	}
-
-	throw lastError || new Error('Échec de la génération après plusieurs tentatives.');
+	const target = (fileName || url || '').toLowerCase();
+	if (target.endsWith('.mp3')) return 'audio/mpeg';
+	if (target.endsWith('.wav')) return 'audio/wav';
+	if (target.endsWith('.m4a')) return 'audio/mp4';
+	if (target.endsWith('.aac')) return 'audio/aac';
+	if (target.endsWith('.ogg')) return 'audio/ogg';
+	if (target.endsWith('.webm')) return 'audio/webm';
+	return 'audio/mp4';
 }
 
 export async function POST(req: NextRequest) {
-	const uploadedFilesMeta: any[] = [];
+	const uploadedGeminiFiles: string[] = [];
 
 	try {
-		const body = await req.json();
-		const fileUrls = (body.fileUrls || []) as FileUrlItem[];
-		const meetingTitle = (body.title as string) || 'Réunion CSE';
-		const meetingDate = (body.date as string) || new Date().toISOString().split('T')[0];
-
-		if (!Array.isArray(fileUrls) || fileUrls.length === 0) {
-			return NextResponse.json({ error: 'Aucun fichier audio fourni.' }, { status: 400 });
+		if (!process.env.GEMINI_API_KEY) {
+			return NextResponse.json(
+				{ error: 'Clé GEMINI_API_KEY manquante sur le serveur.' },
+				{ status: 500 }
+			);
 		}
 
-		// 1. Téléchargement de chaque audio depuis Supabase Storage + upload vers l'API File de Gemini
-		for (const item of fileUrls) {
-			const audioRes = await fetch(item.url);
-			if (!audioRes.ok) {
-				throw new Error(`Impossible de récupérer le fichier audio (${item.name || item.url}).`);
+		const body = await req.json();
+		const {
+			meetingTitle = 'Réunion du CSE',
+			meetingDate = '',
+			audios = [] as AudioItem[],
+			model: requestedModel,
+		} = body;
+
+		if (!Array.isArray(audios) || audios.length === 0) {
+			return NextResponse.json(
+				{ error: 'Aucun fichier audio fourni.' },
+				{ status: 400 }
+			);
+		}
+
+		const modelToUse =
+			typeof requestedModel === 'string' && requestedModel.trim().length > 0
+				? requestedModel.replace(/^models\//, '').trim()
+				: PRIMARY_MODEL;
+
+		const contentsParts: any[] = [];
+
+		for (let i = 0; i < audios.length; i++) {
+			const item = audios[i];
+			if (!item?.url) continue;
+
+			const audioResponse = await fetch(item.url);
+			if (!audioResponse.ok) {
+				return NextResponse.json(
+					{
+						error: `Impossible de récupérer l'audio "${item.name || `fichier ${i + 1}`}" depuis le stockage (HTTP ${audioResponse.status}).`,
+					},
+					{ status: 400 }
+				);
 			}
 
-			const arrayBuffer = await audioRes.arrayBuffer();
-			const buffer = Buffer.from(arrayBuffer);
-			const mimeType = item.mimeType || audioRes.headers.get('content-type') || 'audio/mp4';
-			const blob = new Blob([buffer], { type: mimeType });
+			const arrayBuffer = await audioResponse.arrayBuffer();
+			const mimeType = guessMimeType(
+				item.name,
+				item.url,
+				item.mimeType || audioResponse.headers.get('content-type') || undefined
+			);
 
-			const uploaded = await ai.files.upload({
-				file: blob,
-				mimeType,
-			} as any);
-			uploadedFilesMeta.push(uploaded);
+			const fileBlob = new Blob([arrayBuffer], { type: mimeType });
+			const uploadedFile = await ai.files.upload({
+				file: fileBlob,
+				config: {
+					mimeType,
+					displayName: item.name || `audio-${i + 1}`,
+				},
+			});
+
+			if (uploadedFile?.name) {
+				uploadedGeminiFiles.push(uploadedFile.name);
+			}
+
+			contentsParts.push({
+				fileData: {
+					fileUri: uploadedFile.uri,
+					mimeType: uploadedFile.mimeType || mimeType,
+				},
+			});
 		}
 
-		// 2. Préparation des références de fichiers pour le prompt
-		const fileParts = uploadedFilesMeta.map((f) => ({
-			fileData: {
-				fileUri: f.uri,
-				mimeType: f.mimeType,
-			},
-		}));
+		if (contentsParts.length === 0) {
+			return NextResponse.json(
+				{ error: 'Aucun flux audio valide à traiter.' },
+				{ status: 400 }
+			);
+		}
 
-		// 3. Prompt de rédaction globale
-		const prompt = `Tu es un rédacteur juridique spécialisé dans les Procès-Verbaux de Comité Social et Économique (CSE) en France.
-Analyse l'intégralité des enregistrements audio fournis (qui se suivent chronologiquement) pour la réunion du CSE intitulée "${meetingTitle}" du ${meetingDate}.
+		const prompt = `Tu es un assistant juridique et administratif spécialisé dans la rédaction de Procès-Verbaux (PV) de Comité Social et Économique (CSE) en France.
+À partir des enregistrements audio fournis, rédige un Procès-Verbal structuré, fidèle, clair et professionnel en français.
 
-Rédige un Procès-Verbal unifié, complet, fidèle, neutre et juridiquement rigoureux comprenant :
-1. L'en-tête officiel (Titre, Date, Participants identifiés si mentionnés, Ordre du jour déduit).
-2. Le déroulé détaillé point par point de toute la réunion :
-  - Présentation et informations de la Direction.
-  - Questions, remarques et débats des élus du CSE.
-  - Réponses et engagements précis de la Direction.
-  - Résultats des éventuels votes ou consultations (Pour / Contre / Abstention).
-3. Le relevé synthétique des décisions et actions à suivre.
+Informations de séance :
+- Intitulé : ${meetingTitle}
+- Date : ${meetingDate || 'Non précisée'}
 
-Adopte un style professionnel, clair, structuré avec des titres et des listes à puces.`;
+Consignes :
+1. Respecte strictement les propos, décisions, engagements et votes entendus dans l'audio (n'invente aucun fait).
+2. Structure le PV avec des titres clairs : En-tête / Participants mentionnés, Points de l'ordre du jour, Décisions / Votes / Engagements, Clôture de séance.
+3. Si un passage est inaudible ou ambigu, indique-le brièvement entre crochets ([passage inaudible]).
+4. Utilise un ton neutre, formel et exploitable pour un PV officiel.`;
 
-		// 4. Génération du PV avec relance rapide en cas de 503
-		const response = await generateWithRetry([...fileParts, prompt], 'gemini-3.8-flash', 2);
-		const pvText = response.text || '';
+		contentsParts.push(prompt);
 
-		// 5. Sauvegarde sécurisée du PV unifié dans Supabase
-		const { data: meetingRecord, error: dbError } = await supabase
-			.from('meetings')
-			.insert({
-				title: meetingTitle,
-				meeting_date: meetingDate,
-				pv_content: pvText,
-				status: 'completed',
-			})
-			.select()
-			.single();
+		const response = await ai.models.generateContent({
+			model: modelToUse,
+			contents: contentsParts,
+		});
 
-		if (dbError) {
-			console.error('Erreur insertion DB :', dbError);
+		const pvText = response?.text?.trim();
+		if (!pvText) {
+			return NextResponse.json(
+				{ error: 'Le modèle a renvoyé une réponse vide.' },
+				{ status: 502 }
+			);
 		}
 
 		return NextResponse.json({
-			success: true,
 			pv: pvText,
-			meeting: meetingRecord,
+			modelUsed: modelToUse,
 		});
 	} catch (error: any) {
-		console.error('Erreur génération PV multiple :', error);
+		const statusCode =
+			Number(error?.status || error?.code) ||
+			(String(error?.message || '').includes('429') ? 429 : 500);
+
+		const message =
+			statusCode === 429
+				? 'Quota journalier Gemini atteint (429 RESOURCE_EXHAUSTED). Réessaie après réinitialisation du quota ou avec un autre modèle disponible.'
+				: statusCode === 503
+					? 'Le modèle Gemini est temporairement surchargé (503 UNAVAILABLE). Réessaie dans un instant ou change de modèle.'
+					: error?.message || 'Erreur interne lors de la génération du PV.';
+
 		return NextResponse.json(
-			{ error: error.message || 'Erreur interne lors de la génération du PV.' },
-			{ status: 500 }
+			{
+				error: message,
+				code: statusCode,
+			},
+			{ status: statusCode >= 400 && statusCode < 600 ? statusCode : 500 }
 		);
 	} finally {
-		// 6. Suppression systématique des fichiers sur Gemini (RGPD), même en cas d'erreur
-		for (const f of uploadedFilesMeta) {
-			if (f?.name) {
-				try {
-					await ai.files.delete({ name: f.name });
-				} catch (cleanupErr) {
-					console.error('Erreur suppression fichier Gemini :', cleanupErr);
-				}
+		// Nettoyage systématique des fichiers temporaires déposés sur l'API Files Gemini (RGPD / hygiène)
+		for (const fileName of uploadedGeminiFiles) {
+			try {
+				await ai.files.delete({ name: fileName });
+			} catch {
+				// On ignore une erreur de suppression pour ne pas masquer la réponse principale
 			}
 		}
 	}
