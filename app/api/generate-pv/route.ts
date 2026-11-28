@@ -139,9 +139,8 @@ export async function POST(req: NextRequest) {
 ${attendees.map((a: AttendeeItem) => `- ${a.name}${a.role ? ` — ${a.role}` : ''}`).join('\n')}`
 				: `Aucune liste de présents n'a été cochée : mentionne uniquement les noms et fonctions explicitement audibles dans l'audio sans en inventer.`;
 
-		const partNotesList: string[] = [];
+		const fileParts: any[] = [];
 
-		// Étape 1 : Extraction détaillée fichier par fichier
 		for (let i = 0; i < audios.length; i++) {
 			const item = audios[i];
 			const partLabel = item.name || `Partie ${i + 1} sur ${audios.length}`;
@@ -174,66 +173,31 @@ ${attendees.map((a: AttendeeItem) => `- ${a.name}${a.role ? ` — ${a.role}` : '
 				readyFile = await waitForGeminiFileActive(uploadedFile.name);
 			}
 
-			const extractPrompt = `Tu es un assistant chargé d'établir un compte rendu TRÈS DÉTAILLÉ et quasi exhaustif de l'enregistrement audio suivant (${partLabel} — Séance : ${meetingTitle}).
-
-${attendeesSection}
-
-Consignes strictes de détail :
-- Ne fais PAS un résumé court ou général : retranscris et développe en profondeur l'intégralité des échanges, discussions, questions, réponses, explications, chiffres, montants, pourcentages, dates et arguments présents dans CET enregistrement.
-- Note pour chaque point abordé qui intervient, ce qui est dit, les objections ou demandes de précision, et les réponses apportées.
-- Relève avec précision toutes les décisions, positions, votes et engagements mentionnés.
-- N'invente aucun fait, chiffre, vote, nom ou propos absent de cet audio.
-- Si l'identité d'un intervenant est incertaine malgré la liste, indique [identité à confirmer].
-- Signale les passages incompréhensibles par [passage inaudible].
-- N'utilise pas d'astérisques doubles (**).`;
-
-			const partResponse = await ai.models.generateContent({
-				model: modelToUse,
-				contents: [
-					{
-						fileData: {
-							fileUri: readyFile?.uri || uploadedFile.uri,
-							mimeType: readyFile?.mimeType || uploadedFile.mimeType || mimeType,
-						},
-					},
-					extractPrompt,
-				],
-				config: {
-					maxOutputTokens: 32768,
-					temperature: 0.2,
+			fileParts.push({
+				fileData: {
+					fileUri: readyFile?.uri || uploadedFile.uri,
+					mimeType: readyFile?.mimeType || uploadedFile.mimeType || mimeType,
 				},
 			});
-
-			const partText = partResponse?.text?.trim();
-			if (partText) {
-				partNotesList.push(`--- RELEVÉ DÉTAILLÉ : ${partLabel} ---\n${cleanPvFormatting(partText)}`);
-			}
 		}
 
-		if (!partNotesList.length) {
-			return NextResponse.json(
-				{ error: 'Aucune extraction détaillée n’a pu être générée à partir des fichiers audio.' },
-				{ status: 502 }
-			);
-		}
-
-		// Étape 2 : Consolidation en un Procès-Verbal complet et approfondi
-		const consolidationPrompt = `Tu es un rédacteur professionnel spécialisé dans les procès-verbaux de réunions de Comité Social et Économique (CSE) en droit français.
-À partir des relevés détaillés ci-dessous issus de l'ensemble des enregistrements de la séance (environ plusieurs heures d'échanges), rédige un Procès-Verbal COMPLET, APPROFONDI, STRUCTURÉ et FIDÈLE en français.
+		const prompt = `Tu es un rédacteur professionnel spécialisé dans les procès-verbaux de réunions de Comité Social et Économique (CSE) en droit français.
+À partir de l'ensemble des enregistrements audio fournis pour cette séance, rédige un Procès-Verbal COMPLET, APPROFONDI, STRUCTURÉ et FIDÈLE en français.
 
 Séance : ${meetingTitle} | Date : ${meetingDate || 'Non précisée'}.
 
 ${attendeesSection}
 
 Exigences de fond et de volume :
-- Le PV doit refléter la richesse et la durée réelle des échanges (plusieurs heures) : développe chaque point et chaque sous-point avec précision, sans raccourcir ni condenser à l'extrême.
+- Le PV doit refléter la richesse et la durée réelle des échanges : développe chaque point et chaque sous-point avec précision, sans résumer à l'extrême.
 - Rédige des paragraphes complets et détaillés pour chaque intervention importante, question posée, réponse apportée, argument de la Direction et analyse des élus ou experts.
 - Conserve l'intégralité des faits, chiffres, montants, ratios, dates, décisions prises, votes (pour / contre / abstention / unanimité ou avis rendu) et engagements (qui s'engage, sur quoi, et avec quelle échéance si précisée).
 
 Règles strictes :
-- N'invente aucun fait, chiffre, vote, nom ou propos absent des relevés fournis.
+- N'invente aucun fait, chiffre, vote, nom ou propos absent des enregistrements fournis.
 - Respecte l'orthographe exacte des personnes listées ci-dessus.
-- Garde [identité à confirmer] et [passage inaudible] là où cela est signalé.
+- Si l'identité d'un intervenant est incertaine malgré la liste, indique [identité à confirmer].
+- Signale les passages incompréhensibles par [passage inaudible].
 - Garde un ton formel, neutre et institutionnel.
 - N'utilise pas d'astérisques doubles (**).
 
@@ -241,24 +205,21 @@ Structure attendue :
 1. En-tête de la séance et liste des participants / intervenants présents (avec leur fonction exacte lorsqu'elle est connue)
 2. Déroulement et points abordés (développés de manière approfondie point par point et sous-point par sous-point, avec les échanges et questions/réponses)
 3. Décisions, votes et engagements (en distinguant nettement les engagements de la Direction, ceux des élus du CSE et ceux des éventuels intervenants/experts)
-4. Clôture de la séance (heure de fin si mentionnée et conclusion de séance)
+4. Clôture de la séance (heure de fin si mentionnée et conclusion de séance)`;
 
-Relevés détaillés à consolider :
-${partNotesList.join('\n\n')}`;
-
-		const finalResponse = await ai.models.generateContent({
+		const response = await ai.models.generateContent({
 			model: modelToUse,
-			contents: [consolidationPrompt],
+			contents: [...fileParts, prompt],
 			config: {
 				maxOutputTokens: 32768,
 				temperature: 0.2,
 			},
 		});
 
-		const rawPv = finalResponse?.text?.trim();
+		const rawPv = response?.text?.trim();
 		if (!rawPv) {
 			return NextResponse.json(
-				{ error: 'Le modèle a renvoyé une réponse vide lors de la rédaction finale du PV.' },
+				{ error: 'Le modèle a renvoyé une réponse vide lors de la génération du PV.' },
 				{ status: 502 }
 			);
 		}
