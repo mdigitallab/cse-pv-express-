@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
+import { createClient } from '@supabase/supabase-js';
 
 export const maxDuration = 300;
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const SINGLE_MODEL = 'gemini-3.8-flash';
+const AUDIO_BUCKET = 'audios';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 interface AudioItem {
 	url: string;
 	name?: string;
 	mimeType?: string;
+	path?: string;
 }
 
 interface AttendeeItem {
@@ -28,6 +35,21 @@ function guessMimeType(fileName?: string, url?: string, providedType?: string): 
 	if (target.endsWith('.ogg')) return 'audio/ogg';
 	if (target.endsWith('.webm')) return 'audio/webm';
 	return 'audio/mp4';
+}
+
+function isTrustedSupabaseStorageUrl(rawUrl: string): boolean {
+	if (!supabaseUrl) return false;
+	try {
+		const target = new URL(rawUrl);
+		const expectedBase = new URL(supabaseUrl);
+		return (
+			target.origin === expectedBase.origin &&
+			target.pathname.includes(`/storage/v1/object/`) &&
+			target.pathname.includes(`/${AUDIO_BUCKET}/`)
+		);
+	} catch {
+		return false;
+	}
 }
 
 function normalizeAudios(body: any): AudioItem[] {
@@ -50,6 +72,7 @@ function normalizeAudios(body: any): AudioItem[] {
 						url: url.trim(),
 						name: typeof entry.name === 'string' ? entry.name : undefined,
 						mimeType: typeof entry.mimeType === 'string' ? entry.mimeType : undefined,
+						path: typeof entry.path === 'string' ? entry.path.trim() : undefined,
 					};
 				}
 			}
@@ -97,11 +120,42 @@ function cleanPvFormatting(text: string): string {
 
 export async function POST(req: NextRequest) {
 	const uploadedGeminiFiles: string[] = [];
+	const storagePathsToCleanup: string[] = [];
+
 	try {
 		if (!process.env.GEMINI_API_KEY) {
 			return NextResponse.json(
 				{ error: 'Clé GEMINI_API_KEY manquante sur le serveur.' },
 				{ status: 500 }
+			);
+		}
+
+		if (!supabaseUrl || !supabaseAnonKey) {
+			return NextResponse.json(
+				{ error: 'Configuration Supabase incomplète sur le serveur.' },
+				{ status: 500 }
+			);
+		}
+
+		const authHeader = req.headers.get('authorization') || '';
+		const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+		if (!token) {
+			return NextResponse.json(
+				{ error: 'Authentification requise pour générer un PV.' },
+				{ status: 401 }
+			);
+		}
+
+		const authClient = createClient(supabaseUrl, supabaseAnonKey);
+		const {
+			data: { user },
+			error: authError,
+		} = await authClient.auth.getUser(token);
+
+		if (authError || !user) {
+			return NextResponse.json(
+				{ error: 'Session utilisateur invalide ou expirée.' },
+				{ status: 401 }
 			);
 		}
 
@@ -125,6 +179,24 @@ export async function POST(req: NextRequest) {
 				{ error: 'Aucun fichier audio fourni.' },
 				{ status: 400 }
 			);
+		}
+
+		for (const item of audios) {
+			if (!isTrustedSupabaseStorageUrl(item.url)) {
+				return NextResponse.json(
+					{ error: 'URL audio refusée : la source doit provenir du stockage sécurisé M Lab Vox.' },
+					{ status: 400 }
+				);
+			}
+			if (item.path) {
+				if (!item.path.startsWith(`${user.id}/`) || item.path.includes('..')) {
+					return NextResponse.json(
+						{ error: 'Chemin de fichier audio non autorisé.' },
+						{ status: 403 }
+					);
+				}
+				storagePathsToCleanup.push(item.path);
+			}
 		}
 
 		const attendees = normalizeAttendees(body);
@@ -250,6 +322,14 @@ Structure attendue :
 		for (const fileName of uploadedGeminiFiles) {
 			try {
 				await ai.files.delete({ name: fileName });
+			} catch {
+				// Ignore cleanup errors so they do not mask the main response.
+			}
+		}
+		if (supabaseUrl && supabaseServiceRoleKey && storagePathsToCleanup.length > 0) {
+			try {
+				const adminClient = createClient(supabaseUrl, supabaseServiceRoleKey);
+				await adminClient.storage.from(AUDIO_BUCKET).remove(storagePathsToCleanup);
 			} catch {
 				// Ignore cleanup errors so they do not mask the main response.
 			}

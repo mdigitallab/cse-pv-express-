@@ -26,7 +26,7 @@ export default function Home() {
 	}, []);
 
 	const handleGenerate = async (e: React.FormEvent) => {
-		e.preventDefault();
+  e.preventDefault();
 		if (files.length === 0) {
 			setError('Veuillez sélectionner au moins un fichier audio.');
 			return;
@@ -42,10 +42,19 @@ export default function Home() {
 		const uploadedPaths: string[] = [];
 
 		try {
-			const fileUrls: { url: string; mimeType: string; name: string }[] = [];
+			const {
+				data: { session },
+				error: sessionError,
+			} = await supabase.auth.getSession();
+
+			if (sessionError || !session?.access_token) {
+				throw new Error('Session expirée ou non authentifiée. Veuillez vous reconnecter.');
+			}
+
+			const fileUrls: { url: string; mimeType: string; name: string; path: string }[] = [];
 
 			for (const file of files) {
-				const cleanName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+				const cleanName = `${session.user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 				const { error: uploadError } = await supabase.storage
 					.from('audios')
 					.upload(cleanName, file);
@@ -55,17 +64,28 @@ export default function Home() {
 				}
 				uploadedPaths.push(cleanName);
 
-				const { data: urlData } = supabase.storage.from('audios').getPublicUrl(cleanName);
+				const { data: signedData, error: signedError } = await supabase.storage
+					.from('audios')
+					.createSignedUrl(cleanName, 3600);
+
+				if (signedError || !signedData?.signedUrl) {
+					throw new Error(`Impossible de générer le lien sécurisé pour "${file.name}".`);
+				}
+
 				fileUrls.push({
-					url: urlData.publicUrl,
+					url: signedData.signedUrl,
 					mimeType: file.type || 'audio/mp4',
 					name: file.name,
+					path: cleanName,
 				});
 			}
 
 			const res = await fetch('/api/generate-pv', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${session.access_token}`,
+				},
 				body: JSON.stringify({
 					title,
 					date,
