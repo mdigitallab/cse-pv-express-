@@ -4,7 +4,7 @@ import { GoogleGenAI } from '@google/genai';
 export const maxDuration = 300;
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-const SINGLE_MODEL = 'gemini-3.1-flash-lite';
+const SINGLE_MODEL = 'gemini-2.5-flash';
 
 interface AudioItem {
 	url: string;
@@ -141,7 +141,7 @@ ${attendees.map((a: AttendeeItem) => `- ${a.name}${a.role ? ` — ${a.role}` : '
 
 		const partNotesList: string[] = [];
 
-		// Étape 1 : Analyser chaque fichier audio séparément avec un niveau de détail élevé
+		// Étape 1 : Extraction détaillée fichier par fichier
 		for (let i = 0; i < audios.length; i++) {
 			const item = audios[i];
 			const partLabel = item.name || `Partie ${i + 1} sur ${audios.length}`;
@@ -198,6 +198,10 @@ Consignes strictes de détail :
 					},
 					extractPrompt,
 				],
+				config: {
+					maxOutputTokens: 32768,
+					temperature: 0.2,
+				},
 			});
 
 			const partText = partResponse?.text?.trim();
@@ -213,7 +217,7 @@ Consignes strictes de détail :
 			);
 		}
 
-		// Étape 2 : Consolider l'ensemble des parties en un Procès-Verbal approfondi et structuré
+		// Étape 2 : Consolidation en un Procès-Verbal complet et approfondi
 		const consolidationPrompt = `Tu es un rédacteur professionnel spécialisé dans les procès-verbaux de réunions de Comité Social et Économique (CSE) en droit français.
 À partir des relevés détaillés ci-dessous issus de l'ensemble des enregistrements de la séance (environ plusieurs heures d'échanges), rédige un Procès-Verbal COMPLET, APPROFONDI, STRUCTURÉ et FIDÈLE en français.
 
@@ -223,8 +227,8 @@ ${attendeesSection}
 
 Exigences de fond et de volume :
 - Le PV doit refléter la richesse et la durée réelle des échanges (plusieurs heures) : développe chaque point et chaque sous-point avec précision, sans raccourcir ni condenser à l'extrême.
-- Conserve les faits, chiffres, montants, ratios, dates, questions posées, réponses apportées, arguments de la Direction et analyses/positions des élus ou experts.
-- Détaille clairement les décisions prises, les votes (pour / contre / abstention / unanimité ou avis rendu) et les engagements (qui s'engage, sur quoi, et avec quelle échéance si précisée).
+- Rédige des paragraphes complets et détaillés pour chaque intervention importante, question posée, réponse apportée, argument de la Direction et analyse des élus ou experts.
+- Conserve l'intégralité des faits, chiffres, montants, ratios, dates, décisions prises, votes (pour / contre / abstention / unanimité ou avis rendu) et engagements (qui s'engage, sur quoi, et avec quelle échéance si précisée).
 
 Règles strictes :
 - N'invente aucun fait, chiffre, vote, nom ou propos absent des relevés fournis.
@@ -245,6 +249,10 @@ ${partNotesList.join('\n\n')}`;
 		const finalResponse = await ai.models.generateContent({
 			model: modelToUse,
 			contents: [consolidationPrompt],
+			config: {
+				maxOutputTokens: 32768,
+				temperature: 0.2,
+			},
 		});
 
 		const rawPv = finalResponse?.text?.trim();
