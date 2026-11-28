@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { createClient, Session } from '@supabase/supabase-js';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 import { saveAs } from 'file-saver';
 import ParticipantsSelector, { SelectedAttendee } from './ParticipantsSelector';
-import Link from 'next/link';
+
 const supabase = createClient(
 	process.env.NEXT_PUBLIC_SUPABASE_URL!,
 	process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -45,7 +46,7 @@ export default function Home() {
 		return () => subscription.unsubscribe();
 	}, []);
 
-	const handleLogin = async (e: React.FormEvent) => {
+	const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		setSigningIn(true);
 		setAuthError('');
@@ -68,7 +69,7 @@ export default function Home() {
 		setError('');
 	};
 
-	const handleGenerate = async (e: React.FormEvent) => {
+	const handleGenerate = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		if (files.length === 0) {
 			setError('Veuillez sélectionner au moins un fichier audio.');
@@ -201,6 +202,20 @@ export default function Home() {
 		saveAs(blob, `M_Labvox_PV_CSE_${date}.docx`);
 	};
 
+	const renderFooter = () => (
+		<footer className="max-w-5xl mx-auto mt-12 pt-6 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+			<p>© {new Date().getFullYear()} M Digital Lab — Michel Bénard (SIRET 10774374200010)</p>
+			<div className="flex flex-wrap items-center gap-4">
+				<Link href="/mentions-legales" className="hover:text-blue-400 transition">
+					Mentions légales
+				</Link>
+				<Link href="/confidentialite-cgv" className="hover:text-blue-400 transition">
+					Confidentialité (RGPD) &amp; CGV / CGU
+				</Link>
+			</div>
+		</footer>
+	);
+
 	if (authLoading) {
 		return (
 			<main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-slate-100 flex items-center justify-center p-6">
@@ -211,57 +226,139 @@ export default function Home() {
 
 	if (!session) {
 		return (
-			<main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-slate-100 flex items-center justify-center p-6">
-				<div className="w-full max-w-md bg-slate-900/90 backdrop-blur border border-slate-800 p-8 rounded-2xl shadow-2xl space-y-6">
-					<div className="flex items-center gap-3">
-						<span className="bg-blue-600 text-white font-bold p-2.5 rounded-xl text-lg shadow-lg shadow-blue-500/30">⚖️</span>
-						<div>
-							<h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center gap-2">
-								M Labvox <span className="text-xs font-semibold px-2 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full">MDIGITALLAB</span>
-							</h1>
-							<p className="text-slate-400 text-xs mt-0.5">Accès réservé aux élus et utilisateurs autorisés</p>
+			<main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-slate-100 p-6 md:p-12">
+				<div className="max-w-5xl mx-auto space-y-10">
+					<header className="text-center max-w-3xl mx-auto space-y-4">
+						<div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
+							🎁 1re réunion offerte (jusqu’à 3 h d’audio, export Word inclus) • Stockage UE
 						</div>
+						<div className="flex items-center justify-center gap-3">
+							<span className="bg-blue-600 text-white font-bold p-2.5 rounded-xl text-xl shadow-lg shadow-blue-500/30">⚖️</span>
+							<h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white">
+								M Lab Vox <span className="text-xs font-semibold px-2.5 py-1 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full align-middle">M DIGITAL LAB</span>
+							</h1>
+						</div>
+						<p className="text-slate-300 text-sm md:text-base leading-relaxed">
+							Transformez vos enregistrements audio de réunions de CSE en projets de procès-verbaux structurés et prêts pour export Word (.docx), avec suppression automatique des fichiers audio après traitement.
+						</p>
+					</header>
+
+					<section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+						<div className="bg-slate-900/90 border border-slate-800 p-6 rounded-2xl shadow-xl flex flex-col justify-between space-y-5">
+							<div className="space-y-2">
+								<h2 className="text-lg font-bold text-white">Essentiel</h2>
+								<p className="text-xs text-slate-400">Idéal pour les petits CSE (1 réunion mensuelle confortable)</p>
+								<p className="text-3xl font-extrabold text-white pt-2">
+									49 € <span className="text-xs font-normal text-slate-400">/ mois</span>
+								</p>
+								<ul className="text-xs text-slate-300 space-y-2 pt-3 border-t border-slate-800">
+									<li>✓ <strong>Jusqu’à 5 heures</strong> d’audio / mois</li>
+									<li>✓ Export Word (.docx) &amp; relecture directe</li>
+									<li>✓ Suppression auto des audios (RGPD)</li>
+								</ul>
+							</div>
+							<a href="#connexion-cse" className="block text-center w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold transition">
+								Tester avec la 1re réunion offerte
+							</a>
+						</div>
+
+						<div className="bg-slate-900/95 border-2 border-blue-500/70 p-6 rounded-2xl shadow-2xl flex flex-col justify-between space-y-5 relative">
+							<span className="absolute -top-3 right-4 bg-blue-600 text-white text-[11px] font-bold px-3 py-0.5 rounded-full">
+								Le plus choisi
+							</span>
+							<div className="space-y-2">
+								<h2 className="text-lg font-bold text-white">Pro</h2>
+								<p className="text-xs text-slate-400">Pour les CSE actifs (réunions ordinaires, extraordinaires, CSSCT)</p>
+								<p className="text-3xl font-extrabold text-white pt-2">
+									89 € <span className="text-xs font-normal text-slate-400">/ mois</span>
+								</p>
+								<ul className="text-xs text-slate-300 space-y-2 pt-3 border-t border-slate-800">
+									<li>✓ <strong>Jusqu’à 12 heures</strong> d’audio / mois</li>
+									<li>✓ Multi-fichiers par séance &amp; export Word (.docx)</li>
+									<li>✓ Support prioritaire &amp; suppression auto (RGPD)</li>
+								</ul>
+							</div>
+							<a href="#connexion-cse" className="block text-center w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition shadow-lg shadow-blue-600/20">
+								Tester avec la 1re réunion offerte
+							</a>
+						</div>
+
+						<div className="bg-slate-900/90 border border-slate-800 p-6 rounded-2xl shadow-xl flex flex-col justify-between space-y-5">
+							<div className="space-y-2">
+								<h2 className="text-lg font-bold text-white">Grand CSE</h2>
+								<p className="text-xs text-slate-400">Structures multi-sites, commissions multiples &amp; volumes importants</p>
+								<p className="text-3xl font-extrabold text-white pt-2">
+									149 € <span className="text-xs font-normal text-slate-400">/ mois</span>
+								</p>
+								<ul className="text-xs text-slate-300 space-y-2 pt-3 border-t border-slate-800">
+									<li>✓ <strong>Jusqu’à 25 heures</strong> d’audio / mois</li>
+									<li>✓ Traitement prioritaire &amp; export Word (.docx)</li>
+									<li>✓ Facturation adaptée aux besoins du CSE</li>
+								</ul>
+							</div>
+							<a href="#connexion-cse" className="block text-center w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold transition">
+								Demander un accès / essai
+							</a>
+						</div>
+					</section>
+
+					<div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 text-xs text-slate-300 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+						<p>
+							<strong>Besoin de quelques heures en fin de mois ?</strong> Recharge ponctuelle de <strong>+4 heures d’audio à 29 €</strong> (valable 60 jours, sans changer d’abonnement).
+						</p>
+						<span className="text-slate-400 shrink-0">TVA non applicable, art. 293 B du CGI</span>
 					</div>
 
-					<form onSubmit={handleLogin} className="space-y-4">
+					<section id="connexion-cse" className="max-w-md mx-auto bg-slate-900/90 backdrop-blur border border-slate-800 p-8 rounded-2xl shadow-2xl space-y-6">
 						<div>
-							<label className="block text-sm font-medium text-slate-300 mb-1.5">Adresse e-mail</label>
-							<input
-								type="email"
-								value={email}
-								onChange={(e) => setEmail(e.target.value)}
-								placeholder="secretaire.cse@entreprise.fr"
-								className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-100 focus:outline-none focus:border-blue-500 transition"
-								required
-							/>
-						</div>
-						<div>
-							<label className="block text-sm font-medium text-slate-300 mb-1.5">Mot de passe</label>
-							<input
-								type="password"
-								value={password}
-								onChange={(e) => setPassword(e.target.value)}
-								placeholder="••••••••"
-								className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-100 focus:outline-none focus:border-blue-500 transition"
-								required
-							/>
+							<h2 className="text-xl font-bold text-white">Connexion à votre espace CSE</h2>
+							<p className="text-slate-400 text-xs mt-1">
+								Connectez-vous avec vos identifiants ou contactez <strong>mdigitallab69@gmail.com</strong> pour activer votre 1re réunion gratuite.
+							</p>
 						</div>
 
-						{authError && (
-							<div className="p-3 bg-red-950/50 border border-red-800 text-red-300 rounded-xl text-xs">
-								⚠️ {authError}
+						<form onSubmit={handleLogin} className="space-y-4">
+							<div>
+								<label className="block text-sm font-medium text-slate-300 mb-1.5">Adresse e-mail</label>
+								<input
+									type="email"
+									value={email}
+									onChange={(e) => setEmail(e.target.value)}
+									placeholder="secretaire.cse@entreprise.fr"
+									className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-100 focus:outline-none focus:border-blue-500 transition"
+									required
+								/>
 							</div>
-						)}
+							<div>
+								<label className="block text-sm font-medium text-slate-300 mb-1.5">Mot de passe</label>
+								<input
+									type="password"
+									value={password}
+									onChange={(e) => setPassword(e.target.value)}
+									placeholder="••••••••"
+									className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-100 focus:outline-none focus:border-blue-500 transition"
+									required
+								/>
+							</div>
 
-						<button
-							type="submit"
-							disabled={signingIn}
-							className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-700 disabled:to-slate-700 text-white font-semibold py-3.5 rounded-xl transition shadow-lg shadow-blue-600/20"
-						>
-							{signingIn ? 'Connexion en cours...' : 'Se connecter à M Labvox'}
-						</button>
-					</form>
+							{authError && (
+								<div className="p-3 bg-red-950/50 border border-red-800 text-red-300 rounded-xl text-xs">
+									⚠️ {authError}
+								</div>
+							)}
+
+							<button
+								type="submit"
+								disabled={signingIn}
+								className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-700 disabled:to-slate-700 text-white font-semibold py-3.5 rounded-xl transition shadow-lg shadow-blue-600/20"
+							>
+								{signingIn ? 'Connexion en cours...' : 'Se connecter à M Lab Vox'}
+							</button>
+						</form>
+					</section>
 				</div>
+
+				{renderFooter()}
 			</main>
 		);
 	}
@@ -275,7 +372,7 @@ export default function Home() {
 							<span className="bg-blue-600 text-white font-bold p-2.5 rounded-xl text-lg shadow-lg shadow-blue-500/30">⚖️</span>
 							<div>
 								<h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-2">
-									M Labvox <span className="text-xs font-semibold px-2.5 py-1 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full">MDIGITALLAB</span>
+									M Lab Vox <span className="text-xs font-semibold px-2.5 py-1 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full">M DIGITAL LAB</span>
 								</h1>
 								<p className="text-slate-400 text-sm mt-0.5">Plateforme sécurisée de retranscription et rédaction automatisée de PV de CSE</p>
 							</div>
@@ -324,14 +421,14 @@ export default function Home() {
 					{error && <div className="p-4 bg-red-950/50 border border-red-800 text-red-300 rounded-xl text-sm">⚠️ {error}</div>}
 
 					<div className="flex items-start gap-2 my-4 p-3 bg-slate-800/80 border border-slate-700 rounded-lg text-left">
-	<input id="rgpd-consent" type="checkbox" checked={hasConsented} onChange={(e) => setHasConsented(e.target.checked)} className="mt-1 h-4 w-4 rounded border-slate-500 text-blue-500 focus:ring-blue-500 cursor-pointer" required />
-	<label htmlFor="rgpd-consent" className="text-xs text-slate-300 cursor-pointer leading-relaxed">
-		En important cet enregistrement, je certifie agir au nom du CSE et avoir préalablement informé l’ensemble des participants de la réunion de l’enregistrement audio et de son traitement automatisé, conformément à notre{' '}
-		<Link href="/confidentialite-cgv" target="_blank" className="text-blue-400 underline hover:text-blue-300">
-			Politique de confidentialité (RGPD)
-		</Link>.
-	</label>
-</div>
+						<input id="rgpd-consent" type="checkbox" checked={hasConsented} onChange={(e) => setHasConsented(e.target.checked)} className="mt-1 h-4 w-4 rounded border-slate-500 text-blue-500 focus:ring-blue-500 cursor-pointer" required />
+						<label htmlFor="rgpd-consent" className="text-xs text-slate-300 cursor-pointer leading-relaxed">
+							En important cet enregistrement, je certifie agir au nom du CSE et avoir préalablement informé l’ensemble des participants de la réunion de l’enregistrement audio et de son traitement automatisé, conformément à notre{' '}
+							<Link href="/confidentialite-cgv" target="_blank" className="text-blue-400 underline hover:text-blue-300">
+								Politique de confidentialité (RGPD)
+							</Link>.
+						</label>
+					</div>
 
 					<button type="submit" disabled={loading || !hasConsented} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-700 disabled:to-slate-700 text-white font-semibold py-4 rounded-xl transition shadow-lg shadow-blue-600/20 flex items-center justify-center gap-3 text-base">
 						{loading ? (
@@ -359,17 +456,8 @@ export default function Home() {
 					</section>
 				)}
 			</div>
-			<footer className="max-w-4xl mx-auto mt-10 pt-6 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
-	<p>© {new Date().getFullYear()} M Digital Lab — Michel Bénard (SIRET 10774374200010)</p>
-	<div className="flex items-center gap-4">
-		<Link href="/mentions-legales" className="hover:text-blue-400 transition">
-			Mentions légales
-		</Link>
-		<Link href="/confidentialite-cgv" className="hover:text-blue-400 transition">
-			Confidentialité (RGPD) &amp; CGV / CGU
-		</Link>
-	</div>
-</footer>
+
+			{renderFooter()}
 		</main>
 	);
 }

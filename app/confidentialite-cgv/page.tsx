@@ -94,9 +94,12 @@ export default function ConfidentialiteCgvPage() {
 					</div>
 
 					<div className="space-y-1">
-						<h3 className="text-base font-semibold text-white">Article 4 — Tarifs, facturation et statut fiscal</h3>
+						<h3 className="text-base font-semibold text-white">Article 4 — Essai sur une réunion, tarifs, recharge et statut fiscal</h3>
 						<p>
-							Les abonnements mensuels sont facturés selon la formule souscrite (comprise entre 49 € et 89 € HT/mois selon le volume d’heures inclus). En application du régime de la franchise en base de TVA (micro-entreprise) : <strong>« TVA non applicable, art. 293 B du CGI »</strong>.
+							<strong>M Digital Lab</strong> propose aux nouveaux clients une <strong>première réunion offerte</strong> à titre d’essai (limitée à une seule séance par CSE ou organisation, jusqu’à 3 heures d’audio maximum, export Word inclus), soumise aux mêmes obligations d’information préalable des participants et de confidentialité. À l’issue de cet essai, l’utilisation continue du service s’effectue via des abonnements mensuels sans engagement selon la formule choisie : <strong>Essentiel (49 € / mois — jusqu’à 5 heures d’audio)</strong>, <strong>Pro (89 € / mois — jusqu’à 12 heures d’audio)</strong> ou <strong>Grand CSE (149 € / mois — jusqu’à 25 heures d’audio)</strong>.
+						</p>
+						<p>
+							En cas de dépassement ponctuel du volume mensuel inclus dans son abonnement, le client peut souscrire à tout moment une <strong>recharge ponctuelle de 4 heures d’audio supplémentaires au tarif de 29 €</strong> (paiement unique, valable 60 jours à compter de l’achat, sans modification de son abonnement mensuel). En application du régime de la franchise en base de TVA (micro-entreprise) : <strong>« TVA non applicable, art. 293 B du CGI »</strong>.
 						</p>
 					</div>
 
