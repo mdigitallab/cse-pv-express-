@@ -4,7 +4,7 @@ import { GoogleGenAI } from '@google/genai';
 export const maxDuration = 300;
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-const SINGLE_MODEL = 'gemini-2.5-flash';
+const SINGLE_MODEL = 'gemini-3.8-flash';
 
 interface AudioItem {
 	url: string;
