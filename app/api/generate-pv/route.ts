@@ -182,7 +182,7 @@ ${attendees.map((a: AttendeeItem) => `- ${a.name}${a.role ? ` — ${a.role}` : '
 		}
 
 		const prompt = `Tu es un rédacteur professionnel spécialisé dans les procès-verbaux de réunions de Comité Social et Économique (CSE) en droit français.
-À partir de l'ensemble des enregistrements audio fournis pour cette séance, rédige un Procès-Verbal COMPLET, APPROFONDI, STRUCTURÉ et FIDÈLE en français.
+À partir de l'ensemble des enregistrements audio fournis pour cette séance, rédige un Procès-Verbal COMPLET, APPROFONDI, STRUCTURÉ, FIDÈLE et IRRÉPROCHABLE SUR LE PLAN LINGUISTIQUE en français.
 
 Séance : ${meetingTitle} | Date : ${meetingDate || 'Non précisée'}.
 
@@ -193,9 +193,13 @@ Exigences de fond et de volume :
 - Rédige des paragraphes complets et détaillés pour chaque intervention importante, question posée, réponse apportée, argument de la Direction et analyse des élus ou experts.
 - Conserve l'intégralité des faits, chiffres, montants, ratios, dates, décisions prises, votes (pour / contre / abstention / unanimité ou avis rendu) et engagements (qui s'engage, sur quoi, et avec quelle échéance si précisée).
 
+Correction linguistique et orthographique :
+- Corrige systématiquement toutes les fautes d'orthographe, de grammaire, d'accord, de conjugaison, d'accents et de ponctuation, ainsi que les maladresses orales ou coquilles de transcription.
+- Soigne la capitalisation (majuscules en début de phrase, sur les noms propres et fonctions/titres selon l'usage) tout en respectant l'orthographe exacte des noms et prénoms des personnes cochées dans la liste ci-dessus.
+- Veille à ce qu'aucune phrase ne soit coupée ni laissée inachevée.
+
 Règles strictes :
 - N'invente aucun fait, chiffre, vote, nom ou propos absent des enregistrements fournis.
-- Respecte l'orthographe exacte des personnes listées ci-dessus.
 - Si l'identité d'un intervenant est incertaine malgré la liste, indique [identité à confirmer].
 - Signale les passages incompréhensibles par [passage inaudible].
 - Garde un ton formel, neutre et institutionnel.
