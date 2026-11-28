@@ -281,6 +281,7 @@ export default function Home() {
 							<a href="#connexion-cse" className="block text-center w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition shadow-lg shadow-blue-600/20">
 								Tester avec la 1re réunion offerte
 							</a>
+					
 						</div>
 
 						<div className="bg-slate-900/90 border border-slate-800 p-6 rounded-2xl shadow-xl flex flex-col justify-between space-y-5">
@@ -328,6 +329,7 @@ export default function Home() {
 							>
 								✉️ Demander ma 1re réunion gratuite par e-mail
 							</a>
+							<p className="mt-2.5 text-center text-xs text-slate-300 select-all">Contact direct : <a href="mailto:mdigitallab69@gmail.com?subject=Demande%201re%20r%C3%A9union%20gratuite%20-%20M%20Lab%20Vox" className="font-semibold text-blue-400 underline hover:text-blue-300">mdigitallab69@gmail.com</a></p>
 						</div>
 
 						<form onSubmit={handleLogin} className="space-y-4">
