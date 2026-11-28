@@ -75,6 +75,26 @@ function normalizeAttendees(body: any): AttendeeItem[] {
 		.filter((a: AttendeeItem | null): a is AttendeeItem => a !== null);
 }
 
+async function waitForGeminiFileActive(fileName: string, maxAttempts = 20): Promise<any> {
+	for (let attempt = 0; attempt < maxAttempts; attempt++) {
+		const info = await ai.files.get({ name: fileName });
+		const state = String((info as any)?.state || '').toUpperCase();
+		if (!state || state === 'ACTIVE') return info;
+		if (state === 'FAILED') {
+			throw new Error(`Le traitement du fichier audio "${fileName}" a échoué côté Gemini.`);
+		}
+		await new Promise((resolve) => setTimeout(resolve, 1500));
+	}
+	throw new Error('Délai dépassé lors de la préparation du fichier audio sur Gemini.');
+}
+
+function cleanPvFormatting(text: string): string {
+	return text
+		.replace(/\*\*/g, '')
+		.replace(/\n{3,}/g, '\n\n')
+		.trim();
+}
+
 export async function POST(req: NextRequest) {
 	const uploadedGeminiFiles: string[] = [];
 	try {
@@ -137,11 +157,16 @@ export async function POST(req: NextRequest) {
 				config: { mimeType, displayName: item.name || `audio-${i + 1}` },
 			});
 
-			if (uploadedFile?.name) uploadedGeminiFiles.push(uploadedFile.name);
+			let readyFile = uploadedFile;
+			if (uploadedFile?.name) {
+				uploadedGeminiFiles.push(uploadedFile.name);
+				readyFile = await waitForGeminiFileActive(uploadedFile.name);
+			}
+
 			contentsParts.push({
 				fileData: {
-					fileUri: uploadedFile.uri,
-					mimeType: uploadedFile.mimeType || mimeType,
+					fileUri: readyFile?.uri || uploadedFile.uri,
+					mimeType: readyFile?.mimeType || uploadedFile.mimeType || mimeType,
 				},
 			});
 		}
@@ -152,37 +177,48 @@ export async function POST(req: NextRequest) {
 ${attendees.map((a: AttendeeItem) => `- ${a.name}${a.role ? ` — ${a.role}` : ''}`).join('\n')}`
 				: `Aucune liste de présents n'a été cochée : mentionne uniquement les noms et fonctions explicitement audibles dans l'audio sans en inventer.`;
 
-		contentsParts.push(
-			`Rédige un Procès-Verbal de réunion CSE clair, fidèle et structuré en français à partir de l'audio fourni.
+		const promptInstruction = `Tu es un rédacteur professionnel spécialisé dans les procès-verbaux de réunions de Comité Social et Économique (CSE) en droit français.
+Rédige un Procès-Verbal COMPLET, DÉTAILLÉ, STRUCTURÉ et FIDÈLE en français à partir des enregistrements audio fournis (qui peuvent représenter plusieurs heures de séance ou plusieurs pistes).
+
 Séance : ${meetingTitle} | Date : ${meetingDate || 'Non précisée'}.
 
 ${attendeesSection}
 
-Structure attendue :
-1. En-tête et liste des participants / intervenants présents (avec leur fonction exacte lorsqu'elle est connue)
-2. Points abordés à l'ordre du jour
-3. Décisions, votes et engagements (en distinguant les engagements de la Direction et ceux des élus du CSE)
-4. Clôture de la séance
+Exigences de fond et de détail :
+- Ne fais PAS un résumé raccourci de quelques lignes : développe chaque sujet et chaque point abordé dans l'ordre chronologique ou selon l'ordre du jour.
+- Restitue fidèlement les faits, chiffres, montants, dates, questions posées, réponses apportées, arguments de la Direction et positions des élus.
+- Détaille clairement les décisions prises, les votes (indiquer pour / contre / abstention / unanimité lorsque mentionnés) et les engagements (qui s'engage, sur quoi, et avec quelle échéance si précisée).
 
 Règles strictes :
-- N'invente aucun fait, chiffre, vote ou propos absent de l'audio.
+- N'invente aucun fait, chiffre, vote, nom ou propos absent de l'audio.
 - Utilise l'orthographe exacte des personnes listées ci-dessus lorsqu'elles interviennent ou sont présentes.
 - Si l'identité d'un intervenant est incertaine malgré la liste, indique [identité à confirmer].
-- Signale les passages incompréhensibles par [passage inaudible] et garde un ton formel.`
-		);
+- Signale les passages incompréhensibles par [passage inaudible].
+- Garde un ton formel, neutre et institutionnel.
+- N'utilise pas d'astérisques doubles (**) pour le gras : structure les titres et sous-titres proprement avec des numéros, des tirets ou des majuscules sobres afin que le texte soit propre à l'affichage et à l'export Word.
+
+Structure attendue :
+1. En-tête de la séance et liste des participants / intervenants présents (avec leur fonction exacte lorsqu'elle est connue)
+2. Déroulement et points abordés (détaillés point par point, avec échanges, questions et réponses)
+3. Décisions, votes et engagements (en distinguant nettement les engagements de la Direction et ceux des élus du CSE)
+4. Clôture de la séance (heure de fin si mentionnée et conclusion de séance)`;
+
+		contentsParts.push(promptInstruction);
 
 		const response = await ai.models.generateContent({
 			model: modelToUse,
 			contents: contentsParts,
 		});
-		const pvText = response?.text?.trim();
-		if (!pvText) {
+
+		const rawText = response?.text?.trim();
+		if (!rawText) {
 			return NextResponse.json(
 				{ error: 'Le modèle a renvoyé une réponse vide.' },
 				{ status: 502 }
 			);
 		}
 
+		const pvText = cleanPvFormatting(rawText);
 		return NextResponse.json({ pv: pvText, modelUsed: modelToUse });
 	} catch (error: any) {
 		const rawMessage = String(error?.message || '');
