@@ -312,9 +312,22 @@ export default function Home() {
 					<section id="connexion-cse" className="max-w-md mx-auto bg-slate-900/90 backdrop-blur border border-slate-800 p-8 rounded-2xl shadow-2xl space-y-6">
 						<div>
 							<h2 className="text-xl font-bold text-white">Connexion à votre espace CSE</h2>
-							<p className="text-slate-400 text-xs mt-1">
-								Connectez-vous avec vos identifiants ou contactez <strong>mdigitallab69@gmail.com</strong> pour activer votre 1re réunion gratuite.
+							<p className="text-slate-400 text-xs mt-1 leading-relaxed">
+								Connectez-vous avec vos identifiants ou écrivez à{' '}
+								<a
+									href="mailto:mdigitallab69@gmail.com?subject=Demande%201re%20r%C3%A9union%20gratuite%20-%20M%20Lab%20Vox"
+									className="text-blue-400 underline hover:text-blue-300"
+								>
+									mdigitallab69@gmail.com
+								</a>{' '}
+								pour activer votre 1re réunion gratuite.
 							</p>
+							<a
+								href="mailto:mdigitallab69@gmail.com?subject=Demande%20d%27acc%C3%A8s%20%2F%201re%20r%C3%A9union%20gratuite%20-%20M%20Lab%20Vox&body=Bonjour%2C%20je%20souhaite%20demander%20l%27activation%20de%20mon%20acc%C3%A8s%20M%20Lab%20Vox%20pour%20notre%20CSE."
+								className="mt-3 inline-flex items-center justify-center w-full py-2.5 px-4 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold transition"
+							>
+								✉️ Demander ma 1re réunion gratuite par e-mail
+							</a>
 						</div>
 
 						<form onSubmit={handleLogin} className="space-y-4">
