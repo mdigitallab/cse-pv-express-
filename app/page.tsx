@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, Session } from '@supabase/supabase-js';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 import { saveAs } from 'file-saver';
 import ParticipantsSelector, { SelectedAttendee } from './ParticipantsSelector';
@@ -12,6 +12,13 @@ const supabase = createClient(
 );
 
 export default function Home() {
+	const [session, setSession] = useState<Session | null>(null);
+	const [authLoading, setAuthLoading] = useState(true);
+	const [email, setEmail] = useState('');
+	const [password, setPassword] = useState('');
+	const [authError, setAuthError] = useState('');
+	const [signingIn, setSigningIn] = useState(false);
+
 	const [title, setTitle] = useState('Réunion Ordinaire du CSE');
 	const [date, setDate] = useState('');
 	const [files, setFiles] = useState<File[]>([]);
@@ -23,10 +30,46 @@ export default function Home() {
 
 	useEffect(() => {
 		setDate(new Date().toISOString().split('T')[0]);
+
+		supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+			setSession(currentSession);
+			setAuthLoading(false);
+		});
+
+		const {
+			data: { subscription },
+		} = supabase.auth.onAuthStateChange((_event, updatedSession) => {
+			setSession(updatedSession);
+		});
+
+		return () => subscription.unsubscribe();
 	}, []);
 
+	const handleLogin = async (e: React.FormEvent) => {
+		e.preventDefault();
+		setSigningIn(true);
+		setAuthError('');
+
+		const { error: signInError } = await supabase.auth.signInWithPassword({
+			email: email.trim(),
+			password,
+		});
+
+		if (signInError) {
+			setAuthError('Identifiants invalides ou compte non activé. Vérifiez votre e-mail et votre mot de passe.');
+		}
+		setSigningIn(false);
+	};
+
+	const handleLogout = async () => {
+		await supabase.auth.signOut();
+		setPvResult('');
+		setFiles([]);
+		setError('');
+	};
+
 	const handleGenerate = async (e: React.FormEvent) => {
-  e.preventDefault();
+		e.preventDefault();
 		if (files.length === 0) {
 			setError('Veuillez sélectionner au moins un fichier audio.');
 			return;
@@ -43,18 +86,18 @@ export default function Home() {
 
 		try {
 			const {
-				data: { session },
+				data: { session: activeSession },
 				error: sessionError,
 			} = await supabase.auth.getSession();
 
-			if (sessionError || !session?.access_token) {
+			if (sessionError || !activeSession?.access_token) {
 				throw new Error('Session expirée ou non authentifiée. Veuillez vous reconnecter.');
 			}
 
 			const fileUrls: { url: string; mimeType: string; name: string; path: string }[] = [];
 
 			for (const file of files) {
-				const cleanName = `${session.user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+				const cleanName = `${activeSession.user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 				const { error: uploadError } = await supabase.storage
 					.from('audios')
 					.upload(cleanName, file);
@@ -84,7 +127,7 @@ export default function Home() {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					Authorization: `Bearer ${session.access_token}`,
+					Authorization: `Bearer ${activeSession.access_token}`,
 				},
 				body: JSON.stringify({
 					title,
@@ -158,6 +201,71 @@ export default function Home() {
 		saveAs(blob, `M_Labvox_PV_CSE_${date}.docx`);
 	};
 
+	if (authLoading) {
+		return (
+			<main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-slate-100 flex items-center justify-center p-6">
+				<p className="text-sm text-slate-400">Vérification de la session sécurisée...</p>
+			</main>
+		);
+	}
+
+	if (!session) {
+		return (
+			<main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-slate-100 flex items-center justify-center p-6">
+				<div className="w-full max-w-md bg-slate-900/90 backdrop-blur border border-slate-800 p-8 rounded-2xl shadow-2xl space-y-6">
+					<div className="flex items-center gap-3">
+						<span className="bg-blue-600 text-white font-bold p-2.5 rounded-xl text-lg shadow-lg shadow-blue-500/30">⚖️</span>
+						<div>
+							<h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center gap-2">
+								M Labvox <span className="text-xs font-semibold px-2 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full">MDIGITALLAB</span>
+							</h1>
+							<p className="text-slate-400 text-xs mt-0.5">Accès réservé aux élus et utilisateurs autorisés</p>
+						</div>
+					</div>
+
+					<form onSubmit={handleLogin} className="space-y-4">
+						<div>
+							<label className="block text-sm font-medium text-slate-300 mb-1.5">Adresse e-mail</label>
+							<input
+								type="email"
+								value={email}
+								onChange={(e) => setEmail(e.target.value)}
+								placeholder="secretaire.cse@entreprise.fr"
+								className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-100 focus:outline-none focus:border-blue-500 transition"
+								required
+							/>
+						</div>
+						<div>
+							<label className="block text-sm font-medium text-slate-300 mb-1.5">Mot de passe</label>
+							<input
+								type="password"
+								value={password}
+								onChange={(e) => setPassword(e.target.value)}
+								placeholder="••••••••"
+								className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-100 focus:outline-none focus:border-blue-500 transition"
+								required
+							/>
+						</div>
+
+						{authError && (
+							<div className="p-3 bg-red-950/50 border border-red-800 text-red-300 rounded-xl text-xs">
+								⚠️ {authError}
+							</div>
+						)}
+
+						<button
+							type="submit"
+							disabled={signingIn}
+							className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-700 disabled:to-slate-700 text-white font-semibold py-3.5 rounded-xl transition shadow-lg shadow-blue-600/20"
+						>
+							{signingIn ? 'Connexion en cours...' : 'Se connecter à M Labvox'}
+						</button>
+					</form>
+				</div>
+			</main>
+		);
+	}
+
 	return (
 		<main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-slate-100 p-6 md:p-12">
 			<div className="max-w-4xl mx-auto space-y-8">
@@ -173,8 +281,17 @@ export default function Home() {
 							</div>
 						</div>
 					</div>
-					<div className="bg-slate-900/80 border border-slate-800 px-4 py-2 rounded-xl text-xs text-slate-400 self-start md:self-auto">
-						Propulsé par <span className="text-blue-400 font-semibold">Gemini</span> &amp; <span className="text-emerald-400 font-semibold">Supabase</span>
+					<div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+						<div className="bg-slate-900/80 border border-slate-800 px-3.5 py-2 rounded-xl text-xs text-slate-300">
+							🔒 {session.user.email}
+						</div>
+						<button
+							type="button"
+							onClick={handleLogout}
+							className="bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3.5 py-2 rounded-xl text-xs font-medium text-slate-200 transition cursor-pointer"
+						>
+							Déconnexion
+						</button>
 					</div>
 				</header>
 
