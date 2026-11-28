@@ -141,7 +141,7 @@ ${attendees.map((a: AttendeeItem) => `- ${a.name}${a.role ? ` — ${a.role}` : '
 
 		const partNotesList: string[] = [];
 
-		// Étape 1 : Analyser chaque fichier audio séparément pour préserver les détails
+		// Étape 1 : Analyser chaque fichier audio séparément avec un niveau de détail élevé
 		for (let i = 0; i < audios.length; i++) {
 			const item = audios[i];
 			const partLabel = item.name || `Partie ${i + 1} sur ${audios.length}`;
@@ -174,13 +174,14 @@ ${attendees.map((a: AttendeeItem) => `- ${a.name}${a.role ? ` — ${a.role}` : '
 				readyFile = await waitForGeminiFileActive(uploadedFile.name);
 			}
 
-			const extractPrompt = `Tu es un assistant chargé de dresser un relevé détaillé et fidèle d'un enregistrement de réunion de CSE (${partLabel} — Séance : ${meetingTitle}).
+			const extractPrompt = `Tu es un assistant chargé d'établir un compte rendu TRÈS DÉTAILLÉ et quasi exhaustif de l'enregistrement audio suivant (${partLabel} — Séance : ${meetingTitle}).
 
 ${attendeesSection}
 
-Consignes strictes :
-- Transcris et détaille exhaustivement les sujets abordés, les échanges, les questions posées, les réponses apportées, les chiffres, montants, dates, votes et engagements présents dans CET enregistrement.
-- Ne résume pas en quelques lignes : conserve la richesse des arguments de la Direction et des élus du CSE.
+Consignes strictes de détail :
+- Ne fais PAS un résumé court ou général : retranscris et développe en profondeur l'intégralité des échanges, discussions, questions, réponses, explications, chiffres, montants, pourcentages, dates et arguments présents dans CET enregistrement.
+- Note pour chaque point abordé qui intervient, ce qui est dit, les objections ou demandes de précision, et les réponses apportées.
+- Relève avec précision toutes les décisions, positions, votes et engagements mentionnés.
 - N'invente aucun fait, chiffre, vote, nom ou propos absent de cet audio.
 - Si l'identité d'un intervenant est incertaine malgré la liste, indique [identité à confirmer].
 - Signale les passages incompréhensibles par [passage inaudible].
@@ -212,30 +213,30 @@ Consignes strictes :
 			);
 		}
 
-		// Étape 2 : Consolider l'ensemble des parties en un Procès-Verbal complet et structuré
+		// Étape 2 : Consolider l'ensemble des parties en un Procès-Verbal approfondi et structuré
 		const consolidationPrompt = `Tu es un rédacteur professionnel spécialisé dans les procès-verbaux de réunions de Comité Social et Économique (CSE) en droit français.
-À partir des relevés détaillés ci-dessous issus des différents enregistrements de la séance, rédige le Procès-Verbal COMPLET, DÉTAILLÉ, STRUCTURÉ et FIDÈLE en français.
+À partir des relevés détaillés ci-dessous issus de l'ensemble des enregistrements de la séance (environ plusieurs heures d'échanges), rédige un Procès-Verbal COMPLET, APPROFONDI, STRUCTURÉ et FIDÈLE en français.
 
 Séance : ${meetingTitle} | Date : ${meetingDate || 'Non précisée'}.
 
 ${attendeesSection}
 
-Exigences de fond et de détail :
-- Ne fais PAS un résumé raccourci : conserve le niveau de détail, les faits, chiffres, montants, dates, questions/réponses, arguments de la Direction et positions des élus issus de toutes les parties.
-- Organise le déroulement de façon claire et structurée point par point.
-- Détaille clairement les décisions prises, les votes (pour / contre / abstention / unanimité lorsque mentionnés) et les engagements (qui s'engage, sur quoi, et avec quelle échéance si précisée).
+Exigences de fond et de volume :
+- Le PV doit refléter la richesse et la durée réelle des échanges (plusieurs heures) : développe chaque point et chaque sous-point avec précision, sans raccourcir ni condenser à l'extrême.
+- Conserve les faits, chiffres, montants, ratios, dates, questions posées, réponses apportées, arguments de la Direction et analyses/positions des élus ou experts.
+- Détaille clairement les décisions prises, les votes (pour / contre / abstention / unanimité ou avis rendu) et les engagements (qui s'engage, sur quoi, et avec quelle échéance si précisée).
 
 Règles strictes :
 - N'invente aucun fait, chiffre, vote, nom ou propos absent des relevés fournis.
 - Respecte l'orthographe exacte des personnes listées ci-dessus.
 - Garde [identité à confirmer] et [passage inaudible] là où cela est signalé.
 - Garde un ton formel, neutre et institutionnel.
-- N'utilise pas d'astérisques doubles (**) pour le gras.
+- N'utilise pas d'astérisques doubles (**).
 
 Structure attendue :
 1. En-tête de la séance et liste des participants / intervenants présents (avec leur fonction exacte lorsqu'elle est connue)
-2. Déroulement et points abordés (détaillés point par point, avec échanges, questions et réponses)
-3. Décisions, votes et engagements (en distinguant nettement les engagements de la Direction et ceux des élus du CSE)
+2. Déroulement et points abordés (développés de manière approfondie point par point et sous-point par sous-point, avec les échanges et questions/réponses)
+3. Décisions, votes et engagements (en distinguant nettement les engagements de la Direction, ceux des élus du CSE et ceux des éventuels intervenants/experts)
 4. Clôture de la séance (heure de fin si mentionnée et conclusion de séance)
 
 Relevés détaillés à consolider :
