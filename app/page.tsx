@@ -5,7 +5,7 @@ import { createClient, Session } from '@supabase/supabase-js';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 import { saveAs } from 'file-saver';
 import ParticipantsSelector, { SelectedAttendee } from './ParticipantsSelector';
-
+import Link from 'next/link';
 const supabase = createClient(
 	process.env.NEXT_PUBLIC_SUPABASE_URL!,
 	process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -324,9 +324,14 @@ export default function Home() {
 					{error && <div className="p-4 bg-red-950/50 border border-red-800 text-red-300 rounded-xl text-sm">⚠️ {error}</div>}
 
 					<div className="flex items-start gap-2 my-4 p-3 bg-slate-800/80 border border-slate-700 rounded-lg text-left">
-						<input id="rgpd-consent" type="checkbox" checked={hasConsented} onChange={(e) => setHasConsented(e.target.checked)} className="mt-1 h-4 w-4 rounded border-slate-500 text-blue-500 focus:ring-blue-500 cursor-pointer" required />
-						<label htmlFor="rgpd-consent" className="text-xs text-slate-300 cursor-pointer leading-relaxed">En important cet enregistrement, je certifie agir au nom du CSE et avoir préalablement informé l’ensemble des participants de la réunion de l’enregistrement audio et de son traitement automatisé.</label>
-					</div>
+	<input id="rgpd-consent" type="checkbox" checked={hasConsented} onChange={(e) => setHasConsented(e.target.checked)} className="mt-1 h-4 w-4 rounded border-slate-500 text-blue-500 focus:ring-blue-500 cursor-pointer" required />
+	<label htmlFor="rgpd-consent" className="text-xs text-slate-300 cursor-pointer leading-relaxed">
+		En important cet enregistrement, je certifie agir au nom du CSE et avoir préalablement informé l’ensemble des participants de la réunion de l’enregistrement audio et de son traitement automatisé, conformément à notre{' '}
+		<Link href="/confidentialite-cgv" target="_blank" className="text-blue-400 underline hover:text-blue-300">
+			Politique de confidentialité (RGPD)
+		</Link>.
+	</label>
+</div>
 
 					<button type="submit" disabled={loading || !hasConsented} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-700 disabled:to-slate-700 text-white font-semibold py-4 rounded-xl transition shadow-lg shadow-blue-600/20 flex items-center justify-center gap-3 text-base">
 						{loading ? (
@@ -354,6 +359,17 @@ export default function Home() {
 					</section>
 				)}
 			</div>
+			<footer className="max-w-4xl mx-auto mt-10 pt-6 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+	<p>© {new Date().getFullYear()} M Digital Lab — Michel Bénard (SIRET 10774374200010)</p>
+	<div className="flex items-center gap-4">
+		<Link href="/mentions-legales" className="hover:text-blue-400 transition">
+			Mentions légales
+		</Link>
+		<Link href="/confidentialite-cgv" className="hover:text-blue-400 transition">
+			Confidentialité (RGPD) &amp; CGV / CGU
+		</Link>
+	</div>
+</footer>
 		</main>
 	);
 }
