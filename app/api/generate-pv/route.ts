@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const SINGLE_MODEL = 'gemini-3.1-flash-lite';
@@ -75,7 +75,7 @@ function normalizeAttendees(body: any): AttendeeItem[] {
 		.filter((a: AttendeeItem | null): a is AttendeeItem => a !== null);
 }
 
-async function waitForGeminiFileActive(fileName: string, maxAttempts = 20): Promise<any> {
+async function waitForGeminiFileActive(fileName: string, maxAttempts = 30): Promise<any> {
 	for (let attempt = 0; attempt < maxAttempts; attempt++) {
 		const info = await ai.files.get({ name: fileName });
 		const state = String((info as any)?.state || '').toUpperCase();
@@ -132,15 +132,25 @@ export async function POST(req: NextRequest) {
 			typeof body?.model === 'string' && body.model.trim()
 				? body.model.replace(/^models\//, '').trim()
 				: SINGLE_MODEL;
-		const contentsParts: any[] = [];
 
+		const attendeesSection =
+			attendees.length > 0
+				? `Personnes présentes / intervenants cochés pour cette séance (respecte strictement ces noms et fonctions) :
+${attendees.map((a: AttendeeItem) => `- ${a.name}${a.role ? ` — ${a.role}` : ''}`).join('\n')}`
+				: `Aucune liste de présents n'a été cochée : mentionne uniquement les noms et fonctions explicitement audibles dans l'audio sans en inventer.`;
+
+		const partNotesList: string[] = [];
+
+		// Étape 1 : Analyser chaque fichier audio séparément pour préserver les détails
 		for (let i = 0; i < audios.length; i++) {
 			const item = audios[i];
+			const partLabel = item.name || `Partie ${i + 1} sur ${audios.length}`;
+
 			const audioResponse = await fetch(item.url);
 			if (!audioResponse.ok) {
 				return NextResponse.json(
 					{
-						error: `Impossible de récupérer l'audio "${item.name || `fichier ${i + 1}`}" depuis le stockage (HTTP ${audioResponse.status}).`,
+						error: `Impossible de récupérer l'audio "${partLabel}" depuis le stockage (HTTP ${audioResponse.status}).`,
 					},
 					{ status: 400 }
 				);
@@ -152,9 +162,10 @@ export async function POST(req: NextRequest) {
 				item.url,
 				item.mimeType || audioResponse.headers.get('content-type') || undefined
 			);
+
 			const uploadedFile = await ai.files.upload({
 				file: new Blob([arrayBuffer], { type: mimeType }),
-				config: { mimeType, displayName: item.name || `audio-${i + 1}` },
+				config: { mimeType, displayName: `part-${i + 1}-${item.name || 'audio'}` },
 			});
 
 			let readyFile = uploadedFile;
@@ -163,62 +174,87 @@ export async function POST(req: NextRequest) {
 				readyFile = await waitForGeminiFileActive(uploadedFile.name);
 			}
 
-			contentsParts.push({
-				fileData: {
-					fileUri: readyFile?.uri || uploadedFile.uri,
-					mimeType: readyFile?.mimeType || uploadedFile.mimeType || mimeType,
-				},
+			const extractPrompt = `Tu es un assistant chargé de dresser un relevé détaillé et fidèle d'un enregistrement de réunion de CSE (${partLabel} — Séance : ${meetingTitle}).
+
+${attendeesSection}
+
+Consignes strictes :
+- Transcris et détaille exhaustivement les sujets abordés, les échanges, les questions posées, les réponses apportées, les chiffres, montants, dates, votes et engagements présents dans CET enregistrement.
+- Ne résume pas en quelques lignes : conserve la richesse des arguments de la Direction et des élus du CSE.
+- N'invente aucun fait, chiffre, vote, nom ou propos absent de cet audio.
+- Si l'identité d'un intervenant est incertaine malgré la liste, indique [identité à confirmer].
+- Signale les passages incompréhensibles par [passage inaudible].
+- N'utilise pas d'astérisques doubles (**).`;
+
+			const partResponse = await ai.models.generateContent({
+				model: modelToUse,
+				contents: [
+					{
+						fileData: {
+							fileUri: readyFile?.uri || uploadedFile.uri,
+							mimeType: readyFile?.mimeType || uploadedFile.mimeType || mimeType,
+						},
+					},
+					extractPrompt,
+				],
 			});
+
+			const partText = partResponse?.text?.trim();
+			if (partText) {
+				partNotesList.push(`--- RELEVÉ DÉTAILLÉ : ${partLabel} ---\n${cleanPvFormatting(partText)}`);
+			}
 		}
 
-		const attendeesSection =
-			attendees.length > 0
-				? `Personnes présentes / intervenants cochés pour cette séance (respecte strictement ces noms et fonctions) :
-${attendees.map((a: AttendeeItem) => `- ${a.name}${a.role ? ` — ${a.role}` : ''}`).join('\n')}`
-				: `Aucune liste de présents n'a été cochée : mentionne uniquement les noms et fonctions explicitement audibles dans l'audio sans en inventer.`;
+		if (!partNotesList.length) {
+			return NextResponse.json(
+				{ error: 'Aucune extraction détaillée n’a pu être générée à partir des fichiers audio.' },
+				{ status: 502 }
+			);
+		}
 
-		const promptInstruction = `Tu es un rédacteur professionnel spécialisé dans les procès-verbaux de réunions de Comité Social et Économique (CSE) en droit français.
-Rédige un Procès-Verbal COMPLET, DÉTAILLÉ, STRUCTURÉ et FIDÈLE en français à partir des enregistrements audio fournis (qui peuvent représenter plusieurs heures de séance ou plusieurs pistes).
+		// Étape 2 : Consolider l'ensemble des parties en un Procès-Verbal complet et structuré
+		const consolidationPrompt = `Tu es un rédacteur professionnel spécialisé dans les procès-verbaux de réunions de Comité Social et Économique (CSE) en droit français.
+À partir des relevés détaillés ci-dessous issus des différents enregistrements de la séance, rédige le Procès-Verbal COMPLET, DÉTAILLÉ, STRUCTURÉ et FIDÈLE en français.
 
 Séance : ${meetingTitle} | Date : ${meetingDate || 'Non précisée'}.
 
 ${attendeesSection}
 
 Exigences de fond et de détail :
-- Ne fais PAS un résumé raccourci de quelques lignes : développe chaque sujet et chaque point abordé dans l'ordre chronologique ou selon l'ordre du jour.
-- Restitue fidèlement les faits, chiffres, montants, dates, questions posées, réponses apportées, arguments de la Direction et positions des élus.
-- Détaille clairement les décisions prises, les votes (indiquer pour / contre / abstention / unanimité lorsque mentionnés) et les engagements (qui s'engage, sur quoi, et avec quelle échéance si précisée).
+- Ne fais PAS un résumé raccourci : conserve le niveau de détail, les faits, chiffres, montants, dates, questions/réponses, arguments de la Direction et positions des élus issus de toutes les parties.
+- Organise le déroulement de façon claire et structurée point par point.
+- Détaille clairement les décisions prises, les votes (pour / contre / abstention / unanimité lorsque mentionnés) et les engagements (qui s'engage, sur quoi, et avec quelle échéance si précisée).
 
 Règles strictes :
-- N'invente aucun fait, chiffre, vote, nom ou propos absent de l'audio.
-- Utilise l'orthographe exacte des personnes listées ci-dessus lorsqu'elles interviennent ou sont présentes.
-- Si l'identité d'un intervenant est incertaine malgré la liste, indique [identité à confirmer].
-- Signale les passages incompréhensibles par [passage inaudible].
+- N'invente aucun fait, chiffre, vote, nom ou propos absent des relevés fournis.
+- Respecte l'orthographe exacte des personnes listées ci-dessus.
+- Garde [identité à confirmer] et [passage inaudible] là où cela est signalé.
 - Garde un ton formel, neutre et institutionnel.
-- N'utilise pas d'astérisques doubles (**) pour le gras : structure les titres et sous-titres proprement avec des numéros, des tirets ou des majuscules sobres afin que le texte soit propre à l'affichage et à l'export Word.
+- N'utilise pas d'astérisques doubles (**) pour le gras.
 
 Structure attendue :
 1. En-tête de la séance et liste des participants / intervenants présents (avec leur fonction exacte lorsqu'elle est connue)
 2. Déroulement et points abordés (détaillés point par point, avec échanges, questions et réponses)
 3. Décisions, votes et engagements (en distinguant nettement les engagements de la Direction et ceux des élus du CSE)
-4. Clôture de la séance (heure de fin si mentionnée et conclusion de séance)`;
+4. Clôture de la séance (heure de fin si mentionnée et conclusion de séance)
 
-		contentsParts.push(promptInstruction);
+Relevés détaillés à consolider :
+${partNotesList.join('\n\n')}`;
 
-		const response = await ai.models.generateContent({
+		const finalResponse = await ai.models.generateContent({
 			model: modelToUse,
-			contents: contentsParts,
+			contents: [consolidationPrompt],
 		});
 
-		const rawText = response?.text?.trim();
-		if (!rawText) {
+		const rawPv = finalResponse?.text?.trim();
+		if (!rawPv) {
 			return NextResponse.json(
-				{ error: 'Le modèle a renvoyé une réponse vide.' },
+				{ error: 'Le modèle a renvoyé une réponse vide lors de la rédaction finale du PV.' },
 				{ status: 502 }
 			);
 		}
 
-		const pvText = cleanPvFormatting(rawText);
+		const pvText = cleanPvFormatting(rawPv);
 		return NextResponse.json({ pv: pvText, modelUsed: modelToUse });
 	} catch (error: any) {
 		const rawMessage = String(error?.message || '');
